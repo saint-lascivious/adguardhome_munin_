@@ -49,7 +49,7 @@ graph_args="${graph_args:-"--lower-limit 0"}"
 graph_category="${graph_category:-"dns"}"
 graph_draw="${graph_draw:-"LINE1"}"
 graph_height="${graph_height:-"200"}"
-graph_scale="${graph_scale:-"yes"}"
+graph_scale="${graph_scale:-"no"}"
 graph_type="${graph_type:-"GAUGE"}"
 graph_width="${graph_width:-"400"}"
 
@@ -406,7 +406,7 @@ adguardhome_munin_config_processing() {
         "graph_height ${graph_height}" \
         "graph_info This graph shows AdGuardHome's average DNS processing time" \
         "graph_scale ${graph_scale}" \
-        "graph_title AdGuardHome avg. processing time" \
+        "graph_title AdGuardHome average processing time" \
         "graph_vlabel seconds" \
         "graph_width ${graph_width}"
     adguardhome_munin_print \
@@ -643,7 +643,7 @@ adguardhome_munin_config_upstreams_avg() {
         "graph_height ${graph_height}" \
         "graph_info This graph shows average response time for top AdGuardHome upstreams" \
         "graph_scale ${graph_scale}" \
-        "graph_title AdGuardHome avg. upstream response time" \
+        "graph_title AdGuardHome average upstream response time" \
         "graph_vlabel seconds" \
         "graph_width ${graph_width}"
     upstreams_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
@@ -664,7 +664,7 @@ adguardhome_munin_config_upstreams_avg() {
         return
     fi
     printf "%s\n" "${upstreams_response}" |
-    jq -r ".top_upstreams_avg_time[:${top_n}}[] | to_entries[] | \"\(.key)\"" | while read -r upstream; do
+    jq -r ".top_upstreams_avg_time[:${top_n}][] | to_entries[] | \"\(.key)\"" | while read -r upstream; do
         upstreams_avg_key=$(printf "%s" "${upstream}" | tr -c 'a-zA-Z0-9' '_')
         case "${upstreams_avg_key}" in
             [0-9]*)
