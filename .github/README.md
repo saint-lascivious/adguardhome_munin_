@@ -23,6 +23,13 @@ Munin plugins for monitoring various AdGuardHome statistics.
     git clone https://github.com/saint-lascivious/adguardhome_munin_.git
     ```
 2. Copy the desired plugin scripts `adguardhome_munin_` to your Munin plugins directory (usually `/usr/share/munin/plugins/`).
+    ```sh
+    cp adguardhome_munin_ /usr/share/munin/plugins/
+    ```
+    Make sure the script is executable:
+    ```sh
+    chmod +x /usr/share/munin/plugins/adguardhome_munin_
+    ```
 3. Create symlinks in `/etc/munin/plugins/` for each plugin you wish to enable:
 
     ```sh
@@ -51,10 +58,12 @@ Set the following environment variables as needed (defaults shown):
 Example for `/etc/munin/plugin-conf.d/adguardhome_munin_`:
 ```
 [adguardhome_munin_*]
-env.username=your_agh_username
-env.password=your_agh_password
-env.host=127.0.0.1
-env.port=3000
+env.proto http
+env.host 192.168.1.123
+env.port 80
+env.username your_agh_username
+env.password your_agh_password
+env.top_n 10
 ```
 
 ## Usage
