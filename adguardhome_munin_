@@ -31,41 +31,42 @@ if [ -z "${adguardhome_munin_plugin_id}" ]; then
     adguardhome_munin_plugin_id="percent"
 fi
 
-adguardhome_munin_plugins="clients domains percent processing queries status upstreams"
+adguardhome_munin_plugins="blocked clients domains percent processing queries status upstreams upstreams_avg"
 
-pref="${proto:-https}"
-host="${host:-"127.0.0.1"}"
-port="${port:-443}"
+pref="${proto:-"https"}"
+host="${host:-"localhost"}"
+port="${port:-"443"}"
 
 api="${pref}://${host}:${port}"
+
+top_n="${top_n:-"20"}"
 
 user="${username:-}"
 pass="${password:-}"
 
-cookie_file="${COOKIE_FILE:-$(mktemp)}"
+graph="${graph:-"yes"}"
+graph_args="${graph_args:-"--lower-limit 0"}"
+graph_category="${graph_category:-"dns"}"
+graph_draw="${graph_draw:-"LINE1"}"
+graph_height="${graph_height:-"200"}"
+graph_scale="${graph_scale:-"yes"}"
+graph_type="${graph_type:-"GAUGE"}"
+graph_width="${graph_width:-"400"}"
+
+cookie_file=$(mktemp)
+
 trap 'rm -f "${cookie_file}"' EXIT
 
 adguardhome_munin_print() {
-    key_val="${1}"
-    colour_val="${2}"
-    crit_val="${3}"
-    draw_val="${4}"
-    graph_val="${5}"
-    info_val="${6}"
-    label_val="${7}"
-    max_val="${8}"
-    min_val="${9}"
-    type_val="${10}"
-    warn_val="${11}"
-    if ! printf %s "${key_val}" | grep -Eq '^[a-zA-Z_][a-zA-Z0-9_]*$'; then
+    if ! printf %s "${1}" | grep -Eq '^[a-zA-Z_][a-zA-Z0-9_]*$'; then
         printf "%s\n" "Error: Invalid or missing key." >&2
         exit 1
     fi
-    if [ -z "${label_val}" ] || printf %s "${label_val}" | grep -q '[#\\]'; then
+    if [ -z "${7}" ] || printf %s "${7}" | grep -q '[#\\]'; then
         printf "%s\n" "Error: Invalid or missing label." >&2
         exit 1
     fi
-    if [ -n "${colour_val}" ] && [ -n "$(printf '%s' "${colour_val}" | tr -d '[:space:]')" ]; then
+    if [ -n "${2}" ] && [ -n "$(printf '%s' "${2}" | tr -d '[:space:]')" ]; then
         colour_val="${colour_val#\#}"
         if printf %s "${colour_val}" | grep -Eq '^[0-9A-Fa-f]{3}$'; then
             r=$(printf %s "${colour_val}" | cut -c1)
@@ -74,50 +75,50 @@ adguardhome_munin_print() {
             colour_val="${r}${r}${g}${g}${b}${b}"
         fi
         if printf %s "${colour_val}" | grep -Eq '^[0-9A-Fa-f]{6}$'; then
-            printf "%s.colour %s\n" "${key_val}" "${colour_val}"
+            printf "%s.colour %s\n" "${1}" "${colour_val}"
         fi
     fi
-    if [ -n "${crit_val}" ] && [ -n "$(printf '%s' "${crit_val}" | tr -d '[:space:]')" ]; then
-        if printf %s "${crit_val}" | grep -Eq '^(-?[0-9]+(\.[0-9]*)?)?(:(-?[0-9]+(\.[0-9]*)?)?)?$|^(-?[0-9]+(\.[0-9]*)?):$'; then
-            printf "%s.critical %s\n" "${key_val}" "${crit_val}"
+    if [ -n "${3}" ] && [ -n "$(printf '%s' "${3}" | tr -d '[:space:]')" ]; then
+        if printf %s "${3}" | grep -Eq '^(-?[0-9]+(\.[0-9]*)?)?(:(-?[0-9]+(\.[0-9]*)?)?)?$|^(-?[0-9]+(\.[0-9]*)?):$'; then
+            printf "%s.critical %s\n" "${1}" "${3}"
         fi
     fi
-    if [ -n "${draw_val}" ] && [ -n "$(printf '%s' "${draw_val}" | tr -d '[:space:]')" ]; then
-        if printf %s "${draw_val}" | grep -Eq '^LINE[0-9]*$|^AREA$|^STACK$|^AREASTACK$|^LINESTACK[0-9]*$'; then
-            printf "%s.draw %s\n" "${key_val}" "${draw_val}"
+    if [ -n "${4}" ] && [ -n "$(printf '%s' "${4}" | tr -d '[:space:]')" ]; then
+        if printf %s "${4}" | grep -Eq '^LINE[0-9]*$|^AREA$|^STACK$|^AREASTACK$|^LINESTACK[0-9]*$'; then
+            printf "%s.draw %s\n" "${1}" "${4}"
         fi
     fi
-    if [ -n "${graph_val}" ] && [ -n "$(printf '%s' "${graph_val}" | tr -d '[:space:]')" ]; then
-        case "${graph_val}" in
+    if [ -n "${5}" ] && [ -n "$(printf '%s' "${5}" | tr -d '[:space:]')" ]; then
+        case "${5}" in
             "yes"|"no")
-                printf "%s.graph %s\n" "${key_val}" "${graph_val}"
+                printf "%s.graph %s\n" "${1}" "${5}"
             ;;
         esac
     fi
-    if [ -n "${info_val}" ] && [ -n "$(printf '%s' "${info_val}" | tr -d '[:space:]')" ]; then
-        printf "%s.info %s\n" "${key_val}" "${info_val}"
+    if [ -n "${6}" ] && [ -n "$(printf '%s' "${6}" | tr -d '[:space:]')" ]; then
+        printf "%s.info %s\n" "${1}" "${6}"
     fi
-    printf "%s.label %s\n" "${key_val}" "${label_val}"
-    if [ -n "${max_val}" ] && [ -n "$(printf '%s' "${max_val}" | tr -d '[:space:]')" ]; then
-        if printf %s "${max_val}" | grep -Eq '^(-?[0-9]+(\.[0-9]*)?)$'; then
-            printf "%s.max %s\n" "${key_val}" "${max_val}"
+    printf "%s.label %s\n" "${1}" "${7}"
+    if [ -n "${8}" ] && [ -n "$(printf '%s' "${8}" | tr -d '[:space:]')" ]; then
+        if printf %s "${8}" | grep -Eq '^(-?[0-9]+(\.[0-9]*)?)$'; then
+            printf "%s.max %s\n" "${1}" "${8}"
         fi
     fi
-    if [ -n "${min_val}" ] && [ -n "$(printf '%s' "${min_val}" | tr -d '[:space:]')" ]; then
-        if printf %s "${min_val}" | grep -Eq '^(-?[0-9]+(\.[0-9]*)?)$'; then
-            printf "%s.min %s\n" "${key_val}" "${min_val}"
+    if [ -n "${9}" ] && [ -n "$(printf '%s' "${9}" | tr -d '[:space:]')" ]; then
+        if printf %s "${9}" | grep -Eq '^(-?[0-9]+(\.[0-9]*)?)$'; then
+            printf "%s.min %s\n" "${1}" "${9}"
         fi
     fi
-    if [ -n "${type_val}" ] && [ -n "$(printf '%s' "${type_val}" | tr -d '[:space:]')" ]; then
-        case "${type_val}" in
+    if [ -n "${10}" ] && [ -n "$(printf '%s' "${10}" | tr -d '[:space:]')" ]; then
+        case "${10}" in
             "GAUGE"|"COUNTER"|"DERIVE"|"ABSOLUTE")
-                printf "%s.type %s\n" "${key_val}" "${type_val}"
+                printf "%s.type %s\n" "${1}" "${10}"
             ;;
         esac
     fi
-    if [ -n "${warn_val}" ] && [ -n "$(printf '%s' "${warn_val}" | tr -d '[:space:]')" ]; then
-        if printf %s "${warn_val}" | grep -Eq '^(-?[0-9]+(\.[0-9]*)?)?(:(-?[0-9]+(\.[0-9]*)?)?)?$|^(-?[0-9]+(\.[0-9]*)?):$'; then
-            printf "%s.warning %s\n" "${key_val}" "${warn_val}"
+    if [ -n "${11}" ] && [ -n "$(printf '%s' "${11}" | tr -d '[:space:]')" ]; then
+        if printf %s "${11}" | grep -Eq '^(-?[0-9]+(\.[0-9]*)?)?(:(-?[0-9]+(\.[0-9]*)?)?)?$|^(-?[0-9]+(\.[0-9]*)?):$'; then
+            printf "%s.warning %s\n" "${1}" "${11}"
         fi
     fi
 }
@@ -138,43 +139,129 @@ adguardhome_munin_logout() {
     rm -f "${cookie_file}"
 }
 
-graph="${graph:-"yes"}"
-graph_args="${graph_args:-"--lower-limit 0"}"
-graph_category="${graph_category:-"dns"}"
-graph_draw="${graph_draw:-"LINE1"}"
-graph_height="${graph_height:-"200"}"
-graph_scale="${graph_scale:-"yes"}"
-graph_type="${graph_type:-"GAUGE"}"
-graph_width="${graph_width:-"400"}"
-
-adguardhome_munin_config_clients() {
+adguardhome_munin_config_blocked() {
     printf "%s\n" \
-        "graph ${graph_clients:-${graph}}" \
-        "graph_args ${graph_args_clients:-${graph_args}}" \
-        "graph_category ${graph_category_clients:-${graph_category}}" \
-        "graph_height ${graph_height_clients:-${graph_height}}" \
-        "graph_info ${graph_info_clients:-"This graph shows top AdGuardHome clients"}" \
-        "graph_scale ${graph_scale_clients:-${graph_scale}}" \
-        "graph_title ${graph_title_clients:-"AdGuardHome clients"}" \
-        "graph_vlabel ${graph_vlabel_clients:-"queries"}" \
-        "graph_width ${graph_width_clients:-${graph_width}}"
-    clients_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
-    printf "%s\n" "${clients_response}" |
-    jq -r '.top_clients[] | to_entries[] | "\(.key)"' | while read -r client; do
-        key=$(printf "%s" "${client}" | tr -c 'a-zA-Z0-9' '_')
-        case "${key}" in
-            [0-9]*)
-                key="client_${key}"
-                ;;
-        esac
+        "graph ${graph}" \
+        "graph_args ${graph_args}" \
+        "graph_category ${graph_category}" \
+        "graph_height ${graph_height}" \
+        "graph_info This graph shows top AdGuardHome blocked domains" \
+        "graph_scale ${graph_scale}" \
+        "graph_title AdGuardHome blocked domains" \
+        "graph_vlabel queries" \
+        "graph_width ${graph_width}"
+    blocked_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
+    blocked_count=$(printf "%s\n" "${blocked_response}" | jq '.top_blocked_domains | length')
+    if [ "${blocked_count}" -eq "0" ]; then
         adguardhome_munin_print \
-            "${key}" \
+            "none" \
             "" \
             "" \
             "${graph_draw}" \
             "yes" \
+            "No blocked domains" \
+            "none" \
             "" \
+            "0" \
+            "${graph_type}" \
+            ""
+        return
+    fi
+    printf "%s\n" "${blocked_response}" |
+    jq -r ".top_blocked_domains[:${top_n}][] | to_entries[] | \"\(.key)\"" | while read -r blocked_domain; do
+        blocked_key=$(printf "%s" "${blocked_domain}" | tr -c 'a-zA-Z0-9' '_')
+        case "${blocked_key}" in
+            [0-9]*)
+                blocked_key="blocked_${blocked_key}"
+                ;;
+        esac
+        if [ "${#blocked_domain}" -gt 19 ]; then
+            label="$(printf "%s" "${blocked_domain}" | cut -c1-16)..."
+        else
+            label="${blocked_domain}"
+        fi
+        adguardhome_munin_print \
+            "${blocked_key}" \
+            "" \
+            "" \
+            "${graph_draw}" \
+            "yes" \
+            "${blocked_domain}" \
+            "${label}" \
+            "" \
+            "0" \
+            "${graph_type}" \
+            ""
+    done
+}
+
+adguardhome_munin_fetch_blocked() {
+    blocked_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
+    blocked_count=$(printf "%s\n" "${blocked_response}" | jq '.top_blocked_domains | length')
+    if [ "${blocked_count}" -eq "0" ]; then
+        printf "none.value 0\n"
+        return
+    fi
+    printf "%s\n" "${blocked_response}" | jq -r ".top_blocked_domains[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | while read -r blocked_domain num_blocked; do
+        blocked_key=$(printf "%s" "${blocked_domain}" | tr -c 'a-zA-Z0-9' '_')
+        case "${blocked_key}" in
+            [0-9]*)
+                blocked_key="blocked_${blocked_key}"
+                ;;
+        esac
+        printf "%s.value %s\n" "${blocked_key}" "${num_blocked}"
+    done
+}
+
+adguardhome_munin_config_clients() {
+    printf "%s\n" \
+        "graph ${graph}" \
+        "graph_args ${graph_args}" \
+        "graph_category ${graph_category}" \
+        "graph_height ${graph_height}" \
+        "graph_info This graph shows top AdGuardHome clients" \
+        "graph_scale ${graph_scale}" \
+        "graph_title AdGuardHome clients" \
+        "graph_vlabel queries" \
+        "graph_width ${graph_width}"
+    clients_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
+    clients_count=$(printf "%s\n" "${clients_response}" | jq '.top_clients | length')
+    if [ "${clients_count}" -eq "0" ]; then
+        adguardhome_munin_print \
+            "none" \
+            "" \
+            "" \
+            "${graph_draw}" \
+            "yes" \
+            "No clients" \
+            "none" \
+            "" \
+            "0" \
+            "${graph_type}" \
+            ""
+        return
+    fi
+    printf "%s\n" "${clients_response}" |
+    jq -r ".top_clients[:${top_n}][] | to_entries[] | \"\(.key)\"" | while read -r client; do
+        clients_key=$(printf "%s" "${client}" | tr -c 'a-zA-Z0-9' '_')
+        case "${clients_key}" in
+            [0-9]*)
+                clients_key="client_${clients_key}"
+                ;;
+        esac
+        if [ "${#client}" -gt 19 ]; then
+            label="$(printf "%s" "${client}" | cut -c1-16)..."
+        else
+            label="${client}"
+        fi
+        adguardhome_munin_print \
+            "${clients_key}" \
+            "" \
+            "" \
+            "${graph_draw}" \
+            "yes" \
             "${client}" \
+            "${label}" \
             "" \
             "0" \
             "${graph_type}" \
@@ -184,45 +271,71 @@ adguardhome_munin_config_clients() {
 
 adguardhome_munin_fetch_clients() {
     clients_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
-    printf "%s\n" "${clients_response}" | jq -r '.top_clients[] | to_entries[] | "\(.key) \(.value)"' | while read -r client num_queries; do
-        key=$(printf "%s" "${client}" | tr -c 'a-zA-Z0-9' '_')
-        case "${key}" in
+    clients_count=$(printf "%s\n" "${clients_response}" | jq '.top_clients | length')
+    if [ "${clients_count}" -eq "0" ]; then
+        printf "none.value 0\n"
+        return
+    fi
+    printf "%s\n" "${clients_response}" | jq -r ".top_clients[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | while read -r client num_queries; do
+        clients_key=$(printf "%s" "${client}" | tr -c 'a-zA-Z0-9' '_')
+        case "${clients_key}" in
             [0-9]*)
-                key="client_${key}"
+                clients_key="client_${clients_key}"
                 ;;
         esac
-        printf "%s.value %s\n" "${key}" "${num_queries}"
+        printf "%s.value %s\n" "${clients_key}" "${num_queries}"
     done
 }
 
 adguardhome_munin_config_domains() {
     printf "%s\n" \
-        "graph ${graph_domains:-${graph}}" \
-        "graph_args ${graph_args_domains:-${graph_args}}" \
-        "graph_category ${graph_category_domains:-${graph_category}}" \
-        "graph_height ${graph_height_domains:-${graph_height}}" \
-        "graph_info ${graph_info_domains:-"This graph shows top AdGuardHome domains"}" \
-        "graph_scale ${graph_scale_domains:-${graph_scale}}" \
-        "graph_title ${graph_title_domains:-"AdGuardHome domains"}" \
-        "graph_vlabel ${graph_vlabel_domains:-"queries"}" \
-        "graph_width ${graph_width_domains:-${graph_width}}"
+        "graph ${graph}" \
+        "graph_args ${graph_args}" \
+        "graph_category ${graph_category}" \
+        "graph_height ${graph_height}" \
+        "graph_info This graph shows top AdGuardHome domains" \
+        "graph_scale ${graph_scale}" \
+        "graph_title AdGuardHome domains" \
+        "graph_vlabel queries" \
+        "graph_width ${graph_width}"
     domains_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
-    printf "%s\n" "${domains_response}" |
-    jq -r '.top_queried_domains[] | to_entries[] | "\(.key)"' | while read -r domain; do
-        key=$(printf "%s" "${domain}" | tr -c 'a-zA-Z0-9' '_')
-        case "${key}" in
-            [0-9]*)
-                key="domain_${key}"
-                ;;
-        esac
+    domains_count=$(printf "%s\n" "${domains_response}" | jq '.top_queried_domains | length')
+    if [ "${domains_count}" -eq "0" ]; then
         adguardhome_munin_print \
-            "${key}" \
+            "none" \
             "" \
             "" \
             "${graph_draw}" \
             "yes" \
+            "No domains" \
+            "none" \
             "" \
+            "0" \
+            "${graph_type}" \
+            ""
+        return
+    fi
+    printf "%s\n" "${domains_response}" |
+    jq -r ".top_queried_domains[:$top_n][] | to_entries[] | \"\(.key)\"" | while read -r domain; do
+        domains_key=$(printf "%s" "${domain}" | tr -c 'a-zA-Z0-9' '_')
+        case "${domains_key}" in
+            [0-9]*)
+                domains_key="domain_${domains_key}"
+                ;;
+        esac
+        if [ "${#domain}" -gt 19 ]; then
+            label="$(printf "%s" "${domain}" | cut -c1-16)..."
+        else
+            label="${domain}"
+        fi
+        adguardhome_munin_print \
+            "${domains_key}" \
+            "" \
+            "" \
+            "${graph_draw}" \
+            "yes" \
             "${domain}" \
+            "${label}" \
             "" \
             "0" \
             "${graph_type}" \
@@ -232,28 +345,33 @@ adguardhome_munin_config_domains() {
 
 adguardhome_munin_fetch_domains() {
     domains_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
-    printf "%s\n" "${domains_response}" | jq -r '.top_queried_domains[] | to_entries[] | "\(.key) \(.value)"' | while read -r domain num_queries; do
-        key=$(printf "%s" "${domain}" | tr -c 'a-zA-Z0-9' '_')
-        case "${key}" in
+    domains_count=$(printf "%s\n" "${domains_response}" | jq '.top_queried_domains | length')
+    if [ "${domains_count}" -eq "0" ]; then
+        printf "none.value 0\n"
+        return
+    fi
+    printf "%s\n" "${domains_response}" | jq -r ".top_queried_domains[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | while read -r domain num_queries; do
+        domains_key=$(printf "%s" "${domain}" | tr -c 'a-zA-Z0-9' '_')
+        case "${domains_key}" in
             [0-9]*)
-                key="domain_${key}"
+                domains_key="domain_${domains_key}"
                 ;;
         esac
-        printf "%s.value %s\n" "${key}" "${num_queries}"
+        printf "%s.value %s\n" "${domains_key}" "${num_queries}"
     done
 }
 
 adguardhome_munin_config_percent() {
     printf "%s\n" \
-        "graph ${graph_percent:-${graph}}" \
-        "graph_args ${graph_args_percent:-"--upper-limit 100 --lower-limit 0"}" \
-        "graph_category ${graph_category_percent:-${graph_category}}" \
-        "graph_height ${graph_height_percent:-${graph_height}}" \
-        "graph_info ${graph_info_percent:-"This graph shows AdGuardHome's blocked query percentage"}" \
-        "graph_scale ${graph_scale_percent:-"no"}" \
-        "graph_title ${graph_title_percent:-"AdGuardHome percent blocked"}" \
-        "graph_vlabel ${graph_vlabel_percent:-"percent blocked"}" \
-        "graph_width ${graph_width_percent:-${graph_width}}"
+        "graph ${graph}" \
+        "graph_args --upper-limit 100 --lower-limit 0" \
+        "graph_category ${graph_category}" \
+        "graph_height ${graph_height}" \
+        "graph_info This graph shows AdGuardHome's blocked query percentage" \
+        "graph_scale ${graph_scale}" \
+        "graph_title AdGuardHome percent blocked" \
+        "graph_vlabel percent blocked" \
+        "graph_width ${graph_width}"
     adguardhome_munin_print \
         "percent_blocked" \
         "" \
@@ -282,15 +400,15 @@ adguardhome_munin_fetch_percent() {
 
 adguardhome_munin_config_processing() {
     printf "%s\n" \
-        "graph ${graph_processing:-${graph}}" \
-        "graph_args ${graph_args_processing:-"--lower-limit 0"}" \
-        "graph_category ${graph_category_processing:-${graph_category}}" \
-        "graph_height ${graph_height_processing:-${graph_height}}" \
-        "graph_info ${graph_info_processing:-"This graph shows AdGuardHome's average DNS processing time"}" \
-        "graph_scale ${graph_scale_processing:-"no"}" \
-        "graph_title ${graph_title_processing:-"AdGuardHome average processing time"}" \
-        "graph_vlabel ${graph_vlabel_processing:-"seconds"}" \
-        "graph_width ${graph_width_processing:-${graph_width}}"
+        "graph ${graph}" \
+        "graph_args ${graph_args}" \
+        "graph_category ${graph_category}" \
+        "graph_height ${graph_height}" \
+        "graph_info This graph shows AdGuardHome's average DNS processing time" \
+        "graph_scale ${graph_scale}" \
+        "graph_title AdGuardHome avg. processing time" \
+        "graph_vlabel seconds" \
+        "graph_width ${graph_width}"
     adguardhome_munin_print \
         "avg_processing_time" \
         "" \
@@ -315,15 +433,15 @@ adguardhome_munin_fetch_processing() {
 
 adguardhome_munin_config_queries() {
     printf "%s\n" \
-        "graph ${graph_queries:-${graph}}" \
-        "graph_args ${graph_args_queries:-"--lower-limit 0"}" \
-        "graph_category ${graph_category_queries:-${graph_category}}" \
-        "graph_height ${graph_height_queries:-${graph_height}}" \
-        "graph_info ${graph_info_queries:-"This graph shows AdGuardHome's DNS query statistics"}" \
-        "graph_scale ${graph_scale_queries:-${graph_scale}}" \
-        "graph_title ${graph_title_queries:-"AdGuardHome queries"}" \
-        "graph_vlabel ${graph_vlabel_queries:-"queries"}" \
-        "graph_width ${graph_width_queries:-${graph_width}}"
+        "graph ${graph}" \
+        "graph_args ${graph_args}" \
+        "graph_category ${graph_category}" \
+        "graph_height ${graph_height}" \
+        "graph_info This graph shows AdGuardHome's DNS query statistics" \
+        "graph_scale ${graph_scale}" \
+        "graph_title AdGuardHome queries" \
+        "graph_vlabel queries" \
+        "graph_width ${graph_width}"
     adguardhome_munin_print \
         "num_dns_queries" \
         "" \
@@ -402,15 +520,15 @@ adguardhome_munin_fetch_queries() {
 
 adguardhome_munin_config_status() {
     printf "%s\n" \
-        "graph ${graph_status:-${graph}}" \
-        "graph_args ${graph_args_status:-"--lower-limit -1 --upper-limit 1"}" \
-        "graph_category ${graph_category_status:-${graph_category}}" \
-        "graph_height ${graph_height_status:-${graph_height}}" \
-        "graph_info ${graph_info_status:-"This graph shows AdGuardHome's protection status"}" \
-        "graph_scale ${graph_scale_status:-"no"}" \
-        "graph_title ${graph_title_status:-"AdGuardHome status"}" \
-        "graph_vlabel ${graph_vlabel_status:-"unknown / disabled / enabled"}" \
-        "graph_width ${graph_width_status:-${graph_width}}"
+        "graph ${graph}" \
+        "graph_args --lower-limit -1 --upper-limit 1" \
+        "graph_category ${graph_category}" \
+        "graph_height ${graph_height}" \
+        "graph_info This graph shows AdGuardHome's protection status" \
+        "graph_scale ${graph_scale}" \
+        "graph_title AdGuardHome status" \
+        "graph_vlabel unknown / disabled / enabled" \
+        "graph_width ${graph_width}"
     adguardhome_munin_print \
         "protection_status" \
         "" \
@@ -445,32 +563,53 @@ adguardhome_munin_fetch_status() {
 
 adguardhome_munin_config_upstreams() {
     printf "%s\n" \
-        "graph ${graph_upstreams:-${graph}}" \
-        "graph_args ${graph_args_upstreams:-${graph_args}}" \
-        "graph_category ${graph_category_upstreams:-${graph_category}}" \
-        "graph_height ${graph_height_upstreams:-${graph_height}}" \
-        "graph_info ${graph_info_upstreams:-"This graph shows top AdGuardHome upstreams"}" \
-        "graph_scale ${graph_scale_upstreams:-${graph_scale}}" \
-        "graph_title ${graph_title_upstreams:-"AdGuardHome upstreams"}" \
-        "graph_vlabel ${graph_vlabel_upstreams:-"queries"}" \
-        "graph_width ${graph_width_upstreams:-${graph_width}}"
+        "graph ${graph}" \
+        "graph_args ${graph_args}" \
+        "graph_category ${graph_category}" \
+        "graph_height ${graph_height}" \
+        "graph_info This graph shows top AdGuardHome upstreams" \
+        "graph_scale ${graph_scale}" \
+        "graph_title AdGuardHome upstreams" \
+        "graph_vlabel queries" \
+        "graph_width ${graph_width}"
     upstreams_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
-    printf "%s\n" "${upstreams_response}" |
-    jq -r '.top_upstreams_responses[] | to_entries[] | "\(.key)"' | while read -r upstream; do
-        key=$(printf "%s" "${upstream}" | tr -c 'a-zA-Z0-9' '_')
-        case "${key}" in
-            [0-9]*)
-                key="upstream_${key}"
-                ;;
-        esac
+    upstreams_count=$(printf "%s\n" "${upstreams_response}" | jq '.top_upstreams_responses | length')
+    if [ "${upstreams_count}" -eq "0" ]; then
         adguardhome_munin_print \
-            "${key}" \
+            "none" \
             "" \
             "" \
             "${graph_draw}" \
             "yes" \
+            "No upstreams" \
+            "none" \
             "" \
+            "0" \
+            "${graph_type}" \
+            ""
+        return
+    fi
+    printf "%s\n" "${upstreams_response}" |
+    jq -r ".top_upstreams_responses[:${top_n}][] | to_entries[] | \"\(.key)\"" | while read -r upstream; do
+        upstreams_key=$(printf "%s" "${upstream}" | tr -c 'a-zA-Z0-9' '_')
+        case "${upstreams_key}" in
+            [0-9]*)
+                upstreams_key="upstream_${upstreams_key}"
+                ;;
+        esac
+        if [ "${#upstream}" -gt 19 ]; then
+            label="$(printf "%s" "${upstream}" | cut -c1-16)..."
+        else
+            label="${upstream}"
+        fi
+        adguardhome_munin_print \
+            "${upstreams_key}" \
+            "" \
+            "" \
+            "${graph_draw}" \
+            "yes" \
             "${upstream}" \
+            "${label}" \
             "" \
             "0" \
             "${graph_type}" \
@@ -480,19 +619,102 @@ adguardhome_munin_config_upstreams() {
 
 adguardhome_munin_fetch_upstreams() {
     upstreams_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
-    printf "%s\n" "${upstreams_response}" | jq -r '.top_upstreams_responses[] | to_entries[] | "\(.key) \(.value)"' | while read -r upstream num_responses; do
-        key=$(printf "%s" "${upstream}" | tr -c 'a-zA-Z0-9' '_')
-        case "${key}" in
+    upstreams_count=$(printf "%s\n" "${upstreams_response}" | jq '.top_upstreams_responses | length')
+    if [ "${upstreams_count}" -eq "0" ]; then
+        printf "none.value 0\n"
+        return
+    fi
+    printf "%s\n" "${upstreams_response}" | jq -r ".top_upstreams_responses[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | while read -r upstream num_responses; do
+        upstreams_key=$(printf "%s" "${upstream}" | tr -c 'a-zA-Z0-9' '_')
+        case "${upstreams_key}" in
             [0-9]*)
-                key="upstream_${key}"
+                upstreams_key="upstream_${upstreams_key}"
                 ;;
         esac
-        printf "%s.value %s\n" "${key}" "${num_responses}"
+        printf "%s.value %s\n" "${upstreams_key}" "${num_responses}"
+    done
+}
+
+adguardhome_munin_config_upstreams_avg() {
+    printf "%s\n" \
+        "graph ${graph}" \
+        "graph_args ${graph_args}" \
+        "graph_category ${graph_category}" \
+        "graph_height ${graph_height}" \
+        "graph_info This graph shows average response time for top AdGuardHome upstreams" \
+        "graph_scale ${graph_scale}" \
+        "graph_title AdGuardHome avg. upstream response time" \
+        "graph_vlabel seconds" \
+        "graph_width ${graph_width}"
+    upstreams_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
+    upstreams_avg_count=$(printf "%s\n" "${upstreams_response}" | jq '.top_upstreams_avg_time | length')
+    if [ "${upstreams_avg_count}" -eq "0" ]; then
+        adguardhome_munin_print \
+            "none" \
+            "" \
+            "" \
+            "${graph_draw}" \
+            "yes" \
+            "No upstreams average response time" \
+            "none" \
+            "" \
+            "0" \
+            "${graph_type}" \
+            ""
+        return
+    fi
+    printf "%s\n" "${upstreams_response}" |
+    jq -r ".top_upstreams_avg_time[:${top_n}}[] | to_entries[] | \"\(.key)\"" | while read -r upstream; do
+        upstreams_avg_key=$(printf "%s" "${upstream}" | tr -c 'a-zA-Z0-9' '_')
+        case "${upstreams_avg_key}" in
+            [0-9]*)
+                upstreams_avg_key="upstream_${upstreams_avg_key}"
+                ;;
+        esac
+        if [ "${#upstream}" -gt 19 ]; then
+            label="$(printf "%s" "${upstream}" | cut -c1-16)..."
+        else
+            label="${upstream}"
+        fi
+        adguardhome_munin_print \
+            "${upstreams_avg_key}" \
+            "" \
+            "" \
+            "${graph_draw}" \
+            "yes" \
+            "${upstream}" \
+            "${label}" \
+            "" \
+            "0" \
+            "${graph_type}" \
+            ""
+    done
+}
+
+adguardhome_munin_fetch_upstreams_avg() {
+    upstreams_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
+    upstreams_avg_count=$(printf "%s\n" "${upstreams_response}" | jq '.top_upstreams_avg_time | length')
+    if [ "${upstreams_avg_count}" -eq "0" ]; then
+        printf "none.value 0\n"
+        return
+    fi
+    printf "%s\n" "${upstreams_response}" | jq -r ".top_upstreams_avg_time[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | while read -r upstream avg_time; do
+        upstreams_avg_key=$(printf "%s" "${upstream}" | tr -c 'a-zA-Z0-9' '_')
+        case "${upstreams_avg_key}" in
+            [0-9]*)
+                upstreams_avg_key="upstreamavg_${upstreams_avg_key}"
+                ;;
+        esac
+        upstreams_avg_time=$(printf "%s" "${avg_time}" | awk -F. '{ printf "%d.%s\n", $1, substr($2 "000", 1, 3) }' | sed 's/\.0*$//;s/\(\.[0-9]*[1-9]\)0*$/\1/')
+        printf "%s.value %s\n" "${upstreams_avg_key}" "${upstreams_avg_time}"
     done
 }
 
 adguardhome_munin_fetch_handler() {
     case "${adguardhome_munin_plugin_id}" in
+        "blocked")
+            adguardhome_munin_fetch_blocked
+            ;;
         "clients")
             adguardhome_munin_fetch_clients
             ;;
@@ -514,11 +736,21 @@ adguardhome_munin_fetch_handler() {
         "upstreams")
             adguardhome_munin_fetch_upstreams
             ;;
+        "upstreams_avg")
+            adguardhome_munin_fetch_upstreams_avg
+            ;;
+        *)
+            printf "%s\n" "Error: Cannot fetch for unknown plugin ID '${adguardhome_munin_plugin_id}'." >&2
+            exit 1
+            ;;
     esac
 }
 
 adguardhome_munin_config_handler() {
     case "${adguardhome_munin_plugin_id}" in
+        "blocked")
+            adguardhome_munin_config_blocked
+            ;;
         "clients")
             adguardhome_munin_config_clients
             ;;
@@ -539,6 +771,13 @@ adguardhome_munin_config_handler() {
             ;;
         "upstreams")
             adguardhome_munin_config_upstreams
+            ;;
+        "upstreams_avg")
+            adguardhome_munin_config_upstreams_avg
+            ;;
+        *)
+            printf "%s\n" "Error: Cannot config for unknown plugin ID '${adguardhome_munin_plugin_id}'." >&2
+            exit 1
             ;;
     esac
     if [ "${MUNIN_CAP_DIRTYCONFIG}" = "1" ]; then
@@ -564,11 +803,15 @@ adguardhome_munin_suggest() {
 }
 
 adguardhome_munin_autoconf() {
-    if adguardhome_munin_check_dependencies >/dev/null 2>&1; then
-        printf "yes\n"
-    else
+    if ! adguardhome_munin_check_dependencies >/dev/null 2>&1; then
         printf "no\n"
+        return
     fi
+    if ! command -v AdGuardHome >/dev/null 2>&1 && [ ! -x /opt/AdGuardHome/AdGuardHome ]; then
+        printf "no\n"
+        return
+    fi
+    printf "yes\n"
 }
 
 adguardhome_munin_auth || {
@@ -589,6 +832,8 @@ case "${1}" in
     "autoconf")
         adguardhome_munin_autoconf
         ;;
+    *)
+        printf "Usage: %s [fetch|config|suggest|autoconf]\n" "${script_path}" >&2
 esac
 
 adguardhome_munin_logout || {
