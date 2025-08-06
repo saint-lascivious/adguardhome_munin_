@@ -2,6 +2,8 @@
 
 Munin plugins for monitoring various AdGuardHome statistics.
 
+---
+
 ## Features
 
 - Track top blocked domains, clients, and queried domains
@@ -10,11 +12,18 @@ Munin plugins for monitoring various AdGuardHome statistics.
 - Automatic detection of AdGuardHome presence for plugin suitability
 - Handles empty data gracefully for robust Munin graphing
 
+---
+
 ## Requirements
 
 - [Munin](http://munin-monitoring.org/)
-- [AdGuardHome](https://adguard.com/en/adguard-home/overview.html) running and accessible via its API
-- `curl`, `jq`, and `mktemp` installed on the host
+    `munin`, `munin-node` (not necessarily on the same host as each other)
+- [AdGuardHome](https://adguard.com)
+    AdGuardHome running and accessible via its API (not necessarily on the same host as Munin)
+- [curl](https://curl.se/), [jq](https://jqlang.org/), and [mktemp](https://www.gnu.org/software/coreutils/manual/html_node/mktemp-invocation.html)
+    These are used for API calls, JSON parsing, and temporary file handling.
+
+---
 
 ## Installation
 
@@ -22,28 +31,33 @@ Munin plugins for monitoring various AdGuardHome statistics.
     ```sh
     git clone https://github.com/saint-lascivious/adguardhome_munin_.git
     ```
-2. Copy the desired plugin scripts `adguardhome_munin_` to your Munin plugins directory (usually `/usr/share/munin/plugins/`).
+2. Copy `adguardhome_munin_` to your Munin plugins directory (usually `/usr/share/munin/plugins/`).
     ```sh
+    # Navigate to the cloned directory
+    cd adguardhome_munin_
+    # Copy the plugin script to the Munin plugins directory
     cp adguardhome_munin_ /usr/share/munin/plugins/
-    ```
-    Make sure the script is executable:
-    ```sh
+    # Make sure the script is executable
     chmod +x /usr/share/munin/plugins/adguardhome_munin_
     ```
-3. Create symlinks in `/etc/munin/plugins/` for each plugin you wish to enable:
+3. Create symlinks in `/etc/munin/plugins/` for each plugins you wish to enable:
 
     ```sh
     ln -s /usr/share/munin/plugins/adguardhome_munin_ /etc/munin/plugins/adguardhome_munin_blocked
     ln -s /usr/share/munin/plugins/adguardhome_munin_ /etc/munin/plugins/adguardhome_munin_clients
     ln -s /usr/share/munin/plugins/adguardhome_munin_ /etc/munin/plugins/adguardhome_munin_domains
+    # ...repeat for other plugins as needed
     ```
 
-    The full list of plugins can be found below.
+    The full list of plugins is:
+    `adguardhome_munin_blocked`, `adguardhome_munin_clients`, `adguardhome_munin_domains`, `adguardhome_munin_percent`, `adguardhome_munin_processing`, `adguardhome_munin_queries`, `adguardhome_munin_status`, `adguardhome_munin_upstreams` and `adguardhome_munin_upstreams_avg`.
 
 4. Restart the Munin node:
     ```sh
     systemctl restart munin-node
     ```
+
+---
 
 ## Configuration
 
@@ -66,6 +80,8 @@ env.password your_agh_password
 env.top_n 10
 ```
 
+---
+
 ## Usage
 
 Each plugin can be run manually for testing:
@@ -74,17 +90,12 @@ munin-run adguardhome_munin_blocked config
 munin-run adguardhome_munin_blocked fetch
 ```
 
-## Plugins
+---
 
-- `blocked` – Top blocked domains
-- `clients` – Top clients by query count
-- `domains` – Top queried domains
-- `percent` – Percentage of blocked queries
-- `processing` – Average DNS processing time
-- `queries` – DNS query statistics
-- `status` – Protection status
-- `upstreams` – Upstream server usage
-- `upstreams_avg` – Upstream average response time
+## Compatibility
+- Munin Version Compatible with Munin >= 2.0.
+
+---
 
 ## License
 
