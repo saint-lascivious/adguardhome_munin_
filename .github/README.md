@@ -4,6 +4,10 @@ Munin plugins for monitoring various AdGuardHome statistics.
 
 ---
 
+## Overview
+
+`adguardhome_munin_` is a POSIX shell Munin wildcard plugin, providing a suite of metrics for monitoring AdGuardHome instances.
+
 ## Features
 
 - Track top blocked domains, clients, and queried domains
@@ -25,9 +29,9 @@ Munin plugins for monitoring various AdGuardHome statistics.
 
 ---
 
-## Installation
+## Install
 
-1. Clone this repository:
+1. Clone this repository
     ```sh
     git clone https://github.com/saint-lascivious/adguardhome_munin_.git
     ```
@@ -40,7 +44,7 @@ Munin plugins for monitoring various AdGuardHome statistics.
     # Make sure the script is executable
     chmod +x /usr/share/munin/plugins/adguardhome_munin_
     ```
-3. Create symlinks in `/etc/munin/plugins/` for each plugins you wish to enable:
+3. Create symlinks in `/etc/munin/plugins/` for each plugins you wish to enable
 
     ```sh
     ln -s /usr/share/munin/plugins/adguardhome_munin_ /etc/munin/plugins/adguardhome_munin_blocked
@@ -49,13 +53,18 @@ Munin plugins for monitoring various AdGuardHome statistics.
     # ...repeat for other plugins as needed
     ```
 
-    The full list of plugins is:
-    `adguardhome_munin_blocked`, `adguardhome_munin_clients`, `adguardhome_munin_domains`, `adguardhome_munin_percent`, `adguardhome_munin_processing`, `adguardhome_munin_queries`, `adguardhome_munin_status`, `adguardhome_munin_upstreams` and `adguardhome_munin_upstreams_avg`.
+    The full list of plugins is: `adguardhome_munin_blocked`, `adguardhome_munin_clients`, `adguardhome_munin_domains`, `adguardhome_munin_percent`, `adguardhome_munin_processing`, `adguardhome_munin_queries`, `adguardhome_munin_status`, `adguardhome_munin_upstreams` and `adguardhome_munin_upstreams_avg`.
 
-4. Restart the Munin node:
+4. Restart the Munin node
     ```sh
     systemctl restart munin-node
     ```
+
+5. …Wait
+    Wait, around five minutes.
+
+    Munin nodes run their plugins periodically, by default at 5 minute intervals past the hour.
+    After the first run, you should see the new plugins in your Munin web interface.
 
 ---
 
@@ -93,7 +102,8 @@ munin-run adguardhome_munin_blocked fetch
 ---
 
 ## Compatibility
-- Munin Version Compatible with Munin >= 2.0.
+- AdGuardHome >= v0.107.0
+- Munin >= 2.0
 
 ---
 
