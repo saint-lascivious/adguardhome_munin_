@@ -189,7 +189,7 @@ adguardhome_munin_auth() {
             return 1
             ;;
         *)
-            printf "Error: Unexpected HTTP response from AdGuardHome API (login): %s\n" "${http_code}" >&2
+            printf "Error: Unexpected HTTP response from AdGuard Home API (login): %s\n" "${http_code}" >&2
             return 1
             ;;
     esac
@@ -208,7 +208,7 @@ adguardhome_munin_logout() {
             return 0
             ;;
         *)
-            printf "%s\n" "Error: Unexpected HTTP response from AdGuardHome API (logout): ${http_code}" >&2
+            printf "%s\n" "Error: Unexpected HTTP response from AdGuard Home API (logout): ${http_code}" >&2
             return 1
             ;;
     esac
@@ -220,9 +220,9 @@ adguardhome_munin_config_blocked() {
         "graph_args ${graph_args}" \
         "graph_category ${graph_category}" \
         "graph_height ${graph_height}" \
-        "graph_info This graph shows the top ${top_n} AdGuardHome blocked domains" \
+        "graph_info This graph shows the top ${top_n} AdGuard Home blocked domains" \
         "graph_scale ${graph_scale}" \
-        "graph_title AdGuardHome top ${top_n} blocked domains" \
+        "graph_title AdGuard Home top ${top_n} blocked domains" \
         "graph_vlabel queries" \
         "graph_width ${graph_width}"
     blocked_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
@@ -269,7 +269,7 @@ adguardhome_munin_config_blocked() {
         "" \
         "${graph_draw}" \
         "yes" \
-        "AdGuardHome blocked domains" \
+        "AdGuard Home blocked domains" \
         "blocked" \
         "" \
         "0" \
@@ -324,9 +324,9 @@ adguardhome_munin_config_clients() {
         "graph_args ${graph_args}" \
         "graph_category ${graph_category}" \
         "graph_height ${graph_height}" \
-        "graph_info This graph shows the top ${top_n} AdGuardHome clients" \
+        "graph_info This graph shows the top ${top_n} AdGuard Home clients" \
         "graph_scale ${graph_scale}" \
-        "graph_title AdGuardHome top ${top_n} clients" \
+        "graph_title AdGuard Home top ${top_n} clients" \
         "graph_vlabel queries" \
         "graph_width ${graph_width}"
     clients_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
@@ -373,7 +373,7 @@ adguardhome_munin_config_clients() {
         "100000" \
         "${graph_draw}" \
         "yes" \
-        "AdGuardHome clients" \
+        "AdGuard Home clients" \
         "client" \
         "" \
         "0" \
@@ -426,9 +426,9 @@ adguardhome_munin_config_domains() {
         "graph_args ${graph_args}" \
         "graph_category ${graph_category}" \
         "graph_height ${graph_height}" \
-        "graph_info This graph shows the top ${top_n} AdGuardHome domains" \
+        "graph_info This graph shows the top ${top_n} AdGuard Home domains" \
         "graph_scale ${graph_scale}" \
-        "graph_title AdGuardHome top ${top_n} domains" \
+        "graph_title AdGuard Home top ${top_n} domains" \
         "graph_vlabel queries" \
         "graph_width ${graph_width}"
     domains_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
@@ -519,9 +519,9 @@ adguardhome_munin_config_percent() {
         "graph_args --upper-limit 100 --lower-limit 0" \
         "graph_category ${graph_category}" \
         "graph_height ${graph_height}" \
-        "graph_info This graph shows AdGuardHome's blocked query percentage" \
+        "graph_info This graph shows AdGuard Home's blocked query percentage" \
         "graph_scale ${graph_scale}" \
-        "graph_title AdGuardHome percent blocked" \
+        "graph_title AdGuard Home percent blocked" \
         "graph_vlabel percent blocked" \
         "graph_width ${graph_width}"
     adguardhome_munin_print \
@@ -530,7 +530,7 @@ adguardhome_munin_config_percent() {
         "90" \
         "${graph_draw}" \
         "yes" \
-        "AdGuardHome percent blocked" \
+        "AdGuard Home percent blocked" \
         "percent blocked" \
         "100" \
         "0" \
@@ -560,9 +560,9 @@ adguardhome_munin_config_processing() {
         "graph_args ${graph_args}" \
         "graph_category ${graph_category}" \
         "graph_height ${graph_height}" \
-        "graph_info This graph shows AdGuardHome's average DNS processing time" \
+        "graph_info This graph shows AdGuard Home's average DNS processing time" \
         "graph_scale ${graph_scale}" \
-        "graph_title AdGuardHome average processing time" \
+        "graph_title AdGuard Home average processing time" \
         "graph_vlabel seconds" \
         "graph_width ${graph_width}"
     adguardhome_munin_print \
@@ -571,7 +571,7 @@ adguardhome_munin_config_processing() {
         "" \
         "${graph_draw}" \
         "yes" \
-        "AdGuardHome average processing time" \
+        "AdGuard Home average processing time" \
         "avg processing time" \
         "" \
         "0" \
@@ -597,9 +597,9 @@ adguardhome_munin_config_queries() {
         "graph_args ${graph_args}" \
         "graph_category ${graph_category}" \
         "graph_height ${graph_height}" \
-        "graph_info This graph shows AdGuardHome's DNS query statistics" \
+        "graph_info This graph shows AdGuard Home's DNS query statistics" \
         "graph_scale ${graph_scale}" \
-        "graph_title AdGuardHome queries" \
+        "graph_title AdGuard Home queries" \
         "graph_vlabel queries" \
         "graph_width ${graph_width}"
     adguardhome_munin_print \
@@ -608,7 +608,7 @@ adguardhome_munin_config_queries() {
         "200000" \
         "${graph_draw}" \
         "yes" \
-        "AdGuardHome DNS queries" \
+        "AdGuard Home DNS queries" \
         "num DNS queries" \
         "" \
         "0" \
@@ -620,7 +620,7 @@ adguardhome_munin_config_queries() {
         "100000" \
         "${graph_draw}" \
         "yes" \
-        "AdGuardHome blocked filtering" \
+        "AdGuard Home blocked filtering" \
         "num blocked filtering" \
         "" \
         "0" \
@@ -632,7 +632,7 @@ adguardhome_munin_config_queries() {
         "100000" \
         "${graph_draw}" \
         "yes" \
-        "AdGuardHome replaced safebrowsing" \
+        "AdGuard Home replaced safebrowsing" \
         "num replaced safebrowsing" \
         "" \
         "0" \
@@ -644,7 +644,7 @@ adguardhome_munin_config_queries() {
         "100000" \
         "${graph_draw}" \
         "yes" \
-        "AdGuardHome replaced parental" \
+        "AdGuard Home replaced parental" \
         "num replaced parental" \
         "" \
         "0" \
@@ -656,7 +656,7 @@ adguardhome_munin_config_queries() {
         "100000" \
         "${graph_draw}" \
         "yes" \
-        "AdGuardHome replaced safesearch" \
+        "AdGuard Home replaced safesearch" \
         "num replaced safesearch" \
         "" \
         "0" \
@@ -692,9 +692,9 @@ adguardhome_munin_config_status() {
         "graph_args --lower-limit -1 --upper-limit 1" \
         "graph_category ${graph_category}" \
         "graph_height ${graph_height}" \
-        "graph_info This graph shows AdGuardHome's protection status" \
+        "graph_info This graph shows AdGuard Home's protection status" \
         "graph_scale ${graph_scale}" \
-        "graph_title AdGuardHome status" \
+        "graph_title AdGuard Home status" \
         "graph_vlabel unknown / disabled / enabled" \
         "graph_width ${graph_width}"
     adguardhome_munin_print \
@@ -703,7 +703,7 @@ adguardhome_munin_config_status() {
         "0:1" \
         "${graph_draw}" \
         "yes" \
-        "AdGuardHome protection status" \
+        "AdGuard Home protection status" \
         "protection status" \
         "" \
         "-1" \
@@ -735,9 +735,9 @@ adguardhome_munin_config_upstreams() {
         "graph_args ${graph_args}" \
         "graph_category ${graph_category}" \
         "graph_height ${graph_height}" \
-        "graph_info This graph shows the top ${top_n} AdGuardHome upstreams" \
+        "graph_info This graph shows the top ${top_n} AdGuard Home upstreams" \
         "graph_scale ${graph_scale}" \
-        "graph_title AdGuardHome top ${top_n} upstreams" \
+        "graph_title AdGuard Home top ${top_n} upstreams" \
         "graph_vlabel queries" \
         "graph_width ${graph_width}"
     upstreams_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
@@ -784,7 +784,7 @@ adguardhome_munin_config_upstreams() {
         "" \
         "${graph_draw}" \
         "yes" \
-        "AdGuardHome upstreams" \
+        "AdGuard Home upstreams" \
         "upstreams" \
         "" \
         "0" \
@@ -837,9 +837,9 @@ adguardhome_munin_config_upstreams_avg() {
         "graph_args ${graph_args}" \
         "graph_category ${graph_category}" \
         "graph_height ${graph_height}" \
-        "graph_info This graph shows average response time for top AdGuardHome upstreams" \
+        "graph_info This graph shows average response time for top AdGuard Home upstreams" \
         "graph_scale ${graph_scale}" \
-        "graph_title AdGuardHome average upstream response time" \
+        "graph_title AdGuard Home average upstream response time" \
         "graph_vlabel seconds" \
         "graph_width ${graph_width}"
     upstreams_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
@@ -886,7 +886,7 @@ adguardhome_munin_config_upstreams_avg() {
         "" \
         "${graph_draw}" \
         "yes" \
-        "AdGuardHome upstreams average response time" \
+        "AdGuard Home upstreams average response time" \
         "upstreams_avg" \
         "" \
         "0" \
@@ -1031,7 +1031,7 @@ adguardhome_munin_autoconf() {
         printf "no\n"
         return
     fi
-    if ! command -v AdGuardHome >/dev/null 2>&1 && [ ! -x /opt/AdGuardHome/AdGuardHome ]; then
+    if ! command -v AdGuard Home >/dev/null 2>&1 && [ ! -x "/opt/AdGuardHome/AdGuardHome" ]; then
         printf "no\n"
         return
     fi
