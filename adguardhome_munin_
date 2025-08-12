@@ -136,6 +136,38 @@ adguardhome_munin_print() {
     fi
 }
 
+adguardhome_munin_print_state_keys() {
+    if [ -s "${1}" ]; then
+        while IFS= read -r key; do
+            adguardhome_munin_print \
+                "${key}" \
+                "${2}" \
+                "${3}" \
+                "${4}" \
+                "${5}" \
+                "${6}" \
+                "${7}" \
+                "${8}" \
+                "${9}" \
+                "${10}" \
+                "${11}"
+        done < "${1}"
+    else
+        adguardhome_munin_print \
+            "none" \
+            "" \
+            "" \
+            "${4}" \
+            "${5}" \
+            "${12}" \
+            "${13}" \
+            "" \
+            "${9}" \
+            "${10}" \
+            ""
+    fi
+}
+
 adguardhome_munin_auth() {
     response=$(curl --connect-timeout 5 -k -s -L \
         -H "Content-Type: application/json" \
@@ -231,35 +263,20 @@ adguardhome_munin_config_blocked() {
         fi
     fi
     rm -f "${tmp_keys_file}"
-    if [ -s "${state_file}" ]; then
-        while IFS= read -r key; do
-            adguardhome_munin_print \
-                "${key}" \
-                "" \
-                "" \
-                "${graph_draw}" \
-                "yes" \
-                "${key}" \
-                "${key}" \
-                "" \
-                "0" \
-                "${graph_type}" \
-                ""
-        done < "${state_file}"
-    else
-        adguardhome_munin_print \
-            "none" \
-            "" \
-            "" \
-            "${graph_draw}" \
-            "yes" \
-            "No blocked domains" \
-            "none" \
-            "" \
-            "0" \
-            "${graph_type}" \
-            ""
-    fi
+    adguardhome_munin_print_state_keys \
+        "${state_file}" \
+        "" \
+        "" \
+        "${graph_draw}" \
+        "yes" \
+        "AdGuardHome blocked domains" \
+        "blocked" \
+        "" \
+        "0" \
+        "${graph_type}" \
+        "" \
+        "No blocked domains" \
+        "none"
 }
 
 adguardhome_munin_fetch_blocked() {
@@ -312,10 +329,8 @@ adguardhome_munin_config_clients() {
         "graph_title AdGuardHome top ${top_n} clients" \
         "graph_vlabel queries" \
         "graph_width ${graph_width}"
-
     clients_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
     tmp_keys_file=$(mktemp "${state_dir}/clients_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "clients_keys_tmp.XXXXXX")
-
     printf "%s\n" "${clients_response}" | jq -r ".top_clients[:${top_n}][] | to_entries[] | \"\(.key)\"" | \
     while read -r client; do
         clients_key=$(printf "%s" "${client}" | tr -c 'a-zA-Z0-9' '_')
@@ -352,35 +367,20 @@ adguardhome_munin_config_clients() {
         fi
     fi
     rm -f "${tmp_keys_file}"
-    if [ -s "${state_file}" ]; then
-        while IFS= read -r key; do
-            adguardhome_munin_print \
-                "${key}" \
-                "" \
-                "100000" \
-                "${graph_draw}" \
-                "yes" \
-                "${key}" \
-                "${key}" \
-                "" \
-                "0" \
-                "${graph_type}" \
-                "0:50000"
-        done < "${state_file}"
-    else
-        adguardhome_munin_print \
-            "none" \
-            "" \
-            "" \
-            "${graph_draw}" \
-            "yes" \
-            "No clients" \
-            "none" \
-            "" \
-            "0" \
-            "${graph_type}" \
-            ""
-    fi
+    adguardhome_munin_print_state_keys \
+        "${state_file}" \
+        "" \
+        "100000" \
+        "${graph_draw}" \
+        "yes" \
+        "AdGuardHome clients" \
+        "client" \
+        "" \
+        "0" \
+        "${graph_type}" \
+        "0:50000" \
+        "No clients" \
+        "none"
 }
 
 adguardhome_munin_fetch_clients() {
@@ -460,44 +460,20 @@ adguardhome_munin_config_domains() {
             "${graph_type}" \
             "0:50000"
     done
-   if [ -s "${tmp_keys_file}" ]; then
-        if [ -f "${state_file}" ]; then
-            cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
-            mv "${tmp_keys_file}.merged" "${state_file}"
-        else
-            mv "${tmp_keys_file}" "${state_file}"
-        fi
-    fi
-    rm -f "${tmp_keys_file}"
-    if [ -s "${state_file}" ]; then
-        while IFS= read -r key; do
-            adguardhome_munin_print \
-                "${key}" \
-                "" \
-                "100000" \
-                "${graph_draw}" \
-                "yes" \
-                "${key}" \
-                "${key}" \
-                "" \
-                "0" \
-                "${graph_type}" \
-                "0:50000"
-        done < "${state_file}"
-    else
-        adguardhome_munin_print \
-            "none" \
-            "" \
-            "" \
-            "${graph_draw}" \
-            "yes" \
-            "No domains" \
-            "none" \
-            "" \
-            "0" \
-            "${graph_type}" \
-            ""
-    fi
+    adguardhome_munin_print_state_keys \
+    "${state_file}" \
+    "" \
+    "100000" \
+    "${graph_draw}" \
+    "yes" \
+    "" \
+    "" \
+    "" \
+    "0" \
+    "${graph_type}" \
+    "0:50000" \
+    "No domains" \
+    "none"
 }
 
 adguardhome_munin_fetch_domains() {
@@ -802,35 +778,20 @@ adguardhome_munin_config_upstreams() {
         fi
     fi
     rm -f "${tmp_keys_file}"
-    if [ -s "${state_file}" ]; then
-        while IFS= read -r key; do
-            adguardhome_munin_print \
-                "${key}" \
-                "" \
-                "" \
-                "${graph_draw}" \
-                "yes" \
-                "${key}" \
-                "${key}" \
-                "" \
-                "0" \
-                "${graph_type}" \
-                ""
-        done < "${state_file}"
-    else
-        adguardhome_munin_print \
-            "none" \
-            "" \
-            "" \
-            "${graph_draw}" \
-            "yes" \
-            "No upstreams" \
-            "none" \
-            "" \
-            "0" \
-            "${graph_type}" \
-            ""
-    fi
+    adguardhome_munin_print_state_keys \
+        "${state_file}" \
+        "" \
+        "" \
+        "${graph_draw}" \
+        "yes" \
+        "AdGuardHome upstreams" \
+        "upstreams" \
+        "" \
+        "0" \
+        "${graph_type}" \
+        "" \
+        "No upstreams" \
+        "none"
 }
 
 adguardhome_munin_fetch_upstreams() {
@@ -919,35 +880,20 @@ adguardhome_munin_config_upstreams_avg() {
         fi
     fi
     rm -f "${tmp_keys_file}"
-    if [ -s "${state_file}" ]; then
-        while IFS= read -r key; do
-            adguardhome_munin_print \
-                "${key}" \
-                "" \
-                "" \
-                "${graph_draw}" \
-                "yes" \
-                "${key}" \
-                "${key}" \
-                "" \
-                "0" \
-                "${graph_type}" \
-                ""
-        done < "${state_file}"
-    else
-        adguardhome_munin_print \
-            "none" \
-            "" \
-            "" \
-            "${graph_draw}" \
-            "yes" \
-            "No upstreams" \
-            "none" \
-            "" \
-            "0" \
-            "${graph_type}" \
-            ""
-    fi
+    adguardhome_munin_print_state_keys \
+        "${state_file}" \
+        "" \
+        "" \
+        "${graph_draw}" \
+        "yes" \
+        "AdGuardHome upstreams average response time" \
+        "upstreams_avg" \
+        "" \
+        "0" \
+        "${graph_type}" \
+        "" \
+        "No upstreams" \
+        "none"
 }
 
 adguardhome_munin_fetch_upstreams_avg() {
