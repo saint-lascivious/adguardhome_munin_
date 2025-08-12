@@ -125,8 +125,19 @@ Example for `/etc/munin/plugin-conf.d/adguardhome_munin_`:
 
 Each plugin can be run manually for testing:
 ```sh
-munin-run adguardhome_munin_blocked config
-munin-run adguardhome_munin_blocked fetch
+    # Generate plugin configuration
+    munin-run adguardhome_munin_blocked config
+    # Fetch data for the plugin
+    munin-run adguardhome_munin_blocked fetch
+```
+
+Older versions of Munin may not recognise the `fetch` command, in which case it should be omitted and the plugin should be run without arguments in order to fetch data:
+
+```sh
+    # Generate plugin configuration
+    munin-run adguardhome_munin_blocked config
+    # Fetch data for the plugin
+    munin-run adguardhome_munin_blocked
 ```
 
 ---
