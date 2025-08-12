@@ -222,14 +222,31 @@ adguardhome_munin_config_blocked() {
             "${graph_type}" \
             ""
     done
-    if [ -f "${state_file}" ]; then
-        cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
-        mv "${tmp_keys_file}.merged" "${state_file}"
-        rm -f "${tmp_keys_file}"
-    else
-        mv "${tmp_keys_file}" "${state_file}"
+    if [ -s "${tmp_keys_file}" ]; then
+        if [ -f "${state_file}" ]; then
+            cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
+            mv "${tmp_keys_file}.merged" "${state_file}"
+        else
+            mv "${tmp_keys_file}" "${state_file}"
+        fi
     fi
-    if [ ! -s "${state_file}" ]; then
+    rm -f "${tmp_keys_file}"
+    if [ -s "${state_file}" ]; then
+        while IFS= read -r key; do
+            adguardhome_munin_print \
+                "${key}" \
+                "" \
+                "" \
+                "${graph_draw}" \
+                "yes" \
+                "${key}" \
+                "${key}" \
+                "" \
+                "0" \
+                "${graph_type}" \
+                ""
+        done < "${state_file}"
+    else
         adguardhome_munin_print \
             "none" \
             "" \
@@ -295,8 +312,10 @@ adguardhome_munin_config_clients() {
         "graph_title AdGuardHome top ${top_n} clients" \
         "graph_vlabel queries" \
         "graph_width ${graph_width}"
+
     clients_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
     tmp_keys_file=$(mktemp "${state_dir}/clients_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "clients_keys_tmp.XXXXXX")
+
     printf "%s\n" "${clients_response}" | jq -r ".top_clients[:${top_n}][] | to_entries[] | \"\(.key)\"" | \
     while read -r client; do
         clients_key=$(printf "%s" "${client}" | tr -c 'a-zA-Z0-9' '_')
@@ -324,14 +343,31 @@ adguardhome_munin_config_clients() {
             "${graph_type}" \
             "0:50000"
     done
-    if [ -f "${state_file}" ]; then
-        cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
-        mv "${tmp_keys_file}.merged" "${state_file}"
-        rm -f "${tmp_keys_file}"
-    else
-        mv "${tmp_keys_file}" "${state_file}"
+    if [ -s "${tmp_keys_file}" ]; then
+        if [ -f "${state_file}" ]; then
+            cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
+            mv "${tmp_keys_file}.merged" "${state_file}"
+        else
+            mv "${tmp_keys_file}" "${state_file}"
+        fi
     fi
-    if [ ! -s "${state_file}" ]; then
+    rm -f "${tmp_keys_file}"
+    if [ -s "${state_file}" ]; then
+        while IFS= read -r key; do
+            adguardhome_munin_print \
+                "${key}" \
+                "" \
+                "100000" \
+                "${graph_draw}" \
+                "yes" \
+                "${key}" \
+                "${key}" \
+                "" \
+                "0" \
+                "${graph_type}" \
+                "0:50000"
+        done < "${state_file}"
+    else
         adguardhome_munin_print \
             "none" \
             "" \
@@ -424,14 +460,31 @@ adguardhome_munin_config_domains() {
             "${graph_type}" \
             "0:50000"
     done
-    if [ -f "${state_file}" ]; then
-        cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
-        mv "${tmp_keys_file}.merged" "${state_file}"
-        rm -f "${tmp_keys_file}"
-    else
-        mv "${tmp_keys_file}" "${state_file}"
+   if [ -s "${tmp_keys_file}" ]; then
+        if [ -f "${state_file}" ]; then
+            cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
+            mv "${tmp_keys_file}.merged" "${state_file}"
+        else
+            mv "${tmp_keys_file}" "${state_file}"
+        fi
     fi
-    if [ ! -s "${state_file}" ]; then
+    rm -f "${tmp_keys_file}"
+    if [ -s "${state_file}" ]; then
+        while IFS= read -r key; do
+            adguardhome_munin_print \
+                "${key}" \
+                "" \
+                "100000" \
+                "${graph_draw}" \
+                "yes" \
+                "${key}" \
+                "${key}" \
+                "" \
+                "0" \
+                "${graph_type}" \
+                "0:50000"
+        done < "${state_file}"
+    else
         adguardhome_munin_print \
             "none" \
             "" \
@@ -740,14 +793,31 @@ adguardhome_munin_config_upstreams() {
             "${graph_type}" \
             ""
     done
-    if [ -f "${state_file}" ]; then
-        cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
-        mv "${tmp_keys_file}.merged" "${state_file}"
-        rm -f "${tmp_keys_file}"
-    else
-        mv "${tmp_keys_file}" "${state_file}"
+    if [ -s "${tmp_keys_file}" ]; then
+        if [ -f "${state_file}" ]; then
+            cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
+            mv "${tmp_keys_file}.merged" "${state_file}"
+        else
+            mv "${tmp_keys_file}" "${state_file}"
+        fi
     fi
-    if [ ! -s "${state_file}" ]; then
+    rm -f "${tmp_keys_file}"
+    if [ -s "${state_file}" ]; then
+        while IFS= read -r key; do
+            adguardhome_munin_print \
+                "${key}" \
+                "" \
+                "" \
+                "${graph_draw}" \
+                "yes" \
+                "${key}" \
+                "${key}" \
+                "" \
+                "0" \
+                "${graph_type}" \
+                ""
+        done < "${state_file}"
+    else
         adguardhome_munin_print \
             "none" \
             "" \
@@ -840,21 +910,38 @@ adguardhome_munin_config_upstreams_avg() {
             "${graph_type}" \
             ""
     done
-    if [ -f "${state_file}" ]; then
-        cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
-        mv "${tmp_keys_file}.merged" "${state_file}"
-        rm -f "${tmp_keys_file}"
-    else
-        mv "${tmp_keys_file}" "${state_file}"
+    if [ -s "${tmp_keys_file}" ]; then
+        if [ -f "${state_file}" ]; then
+            cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
+            mv "${tmp_keys_file}.merged" "${state_file}"
+        else
+            mv "${tmp_keys_file}" "${state_file}"
+        fi
     fi
-    if [ ! -s "${state_file}" ]; then
+    rm -f "${tmp_keys_file}"
+    if [ -s "${state_file}" ]; then
+        while IFS= read -r key; do
+            adguardhome_munin_print \
+                "${key}" \
+                "" \
+                "" \
+                "${graph_draw}" \
+                "yes" \
+                "${key}" \
+                "${key}" \
+                "" \
+                "0" \
+                "${graph_type}" \
+                ""
+        done < "${state_file}"
+    else
         adguardhome_munin_print \
             "none" \
             "" \
             "" \
             "${graph_draw}" \
             "yes" \
-            "No upstreams average response time" \
+            "No upstreams" \
             "none" \
             "" \
             "0" \
