@@ -100,7 +100,7 @@ Set the following environment variables as needed (defaults shown):
 - `top_n`
     - The number of top items to display in graphs (e.g., top blocked domains, clients, etc.).
     - Large values may degrade performance.
-    - Maximum `100`, minimum `10` (greater or lower values will be adjusted to these limits).
+    - Maximum `100`, minimum `1` (greater or lower values will be adjusted to these limits).
     - Default: `10`
 
 Example for `/etc/munin/plugin-conf.d/adguardhome_munin_`:

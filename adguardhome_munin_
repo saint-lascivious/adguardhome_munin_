@@ -48,8 +48,8 @@ top_n="${top_n:-"10"}"
 if [ "${top_n}" -gt "100" ]; then
     top_n="100"
 else
-    if [ "${top_n}" -lt "10" ]; then
-        top_n="10"
+    if [ "${top_n}" -lt "1" ]; then
+        top_n="1"
     fi
 fi
 
