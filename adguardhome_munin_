@@ -43,7 +43,7 @@ port="${port:-"443"}"
 
 api="${pref}://${host}:${port}"
 
-top_n="${top_n:-"20"}"
+top_n="${top_n:-"10"}"
 
 if [ "${top_n}" -gt "100" ]; then
     top_n="100"
@@ -61,7 +61,12 @@ graph_scale="${graph_scale:-"no"}"
 graph_type="${graph_type:-"GAUGE"}"
 graph_width="${graph_width:-"400"}"
 
-cookie_file=$(mktemp)
+state_dir=${MUNIN_PLUGSTATE:-"/tmp/adguardhome_munin_"}
+state_file="${state_dir}/${adguardhome_munin_plugin_id}.state"
+
+mkdir -p "${state_dir}"
+
+cookie_file=$(mktemp "${state_dir}/cookie_file.XXXXXX" 2>/dev/null || mktemp -t cookie_file.XXXXXX)
 
 trap 'rm -f "${cookie_file}"' EXIT
 
@@ -75,7 +80,7 @@ adguardhome_munin_print() {
         exit 1
     fi
     if [ -n "${2}" ] && [ -n "$(printf '%s' "${2}" | tr -d '[:space:]')" ]; then
-        colour_val="${colour_val#\#}"
+        colour_val="${2#\#}"
         if printf %s "${colour_val}" | grep -Eq '^[0-9A-Fa-f]{3}$'; then
             r=$(printf %s "${colour_val}" | cut -c1)
             g=$(printf %s "${colour_val}" | cut -c2)
@@ -132,19 +137,49 @@ adguardhome_munin_print() {
 }
 
 adguardhome_munin_auth() {
-    curl --connect-timeout 5 -k -s -L \
+    response=$(curl --connect-timeout 5 -k -s -L \
         -H "Content-Type: application/json" \
         -c "${cookie_file}" \
         -d "{\"name\":\"${user}\",\"password\":\"${pass}\"}" \
-        "${api}/control/login" > /dev/null
+        -w "\n%{http_code}" \
+        "${api}/control/login")
+    http_code=$(printf "%s" "${response}" | tail -n1)
+    case "${http_code}" in
+        "200")
+            return 0
+            ;;
+        "400")
+            printf "Error: Invalid username/password..\n" >&2
+            return 1
+            ;;
+        "429")
+            printf "Error: Out of login attempts.\n" >&2
+            return 1
+            ;;
+        *)
+            printf "Error: Unexpected HTTP response from AdGuardHome API (login): %s\n" "${http_code}" >&2
+            return 1
+            ;;
+    esac
 }
 
 adguardhome_munin_logout() {
-    curl --connect-timeout 5 -k -s -L \
+    response=$(curl --connect-timeout 5 -k -s -L \
         -H "Content-Type: application/json" \
         -b "${cookie_file}" \
-        "${api}/control/logout" > /dev/null
+        -w "\n%{http_code}" \
+        "${api}/control/logout")
+    http_code=$(printf "%s" "${response}" | tail -n1)
     rm -f "${cookie_file}"
+    case "${http_code}" in
+        "200")
+            return 0
+            ;;
+        *)
+            printf "%s\n" "Error: Unexpected HTTP response from AdGuardHome API (logout): ${http_code}" >&2
+            return 1
+            ;;
+    esac
 }
 
 adguardhome_munin_config_blocked() {
@@ -159,30 +194,16 @@ adguardhome_munin_config_blocked() {
         "graph_vlabel queries" \
         "graph_width ${graph_width}"
     blocked_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
-    blocked_count=$(printf "%s\n" "${blocked_response}" | jq '.top_blocked_domains | length')
-    if [ "${blocked_count}" -eq "0" ]; then
-        adguardhome_munin_print \
-            "none" \
-            "" \
-            "" \
-            "${graph_draw}" \
-            "yes" \
-            "No blocked domains" \
-            "none" \
-            "" \
-            "0" \
-            "${graph_type}" \
-            ""
-        return
-    fi
-    printf "%s\n" "${blocked_response}" |
-    jq -r ".top_blocked_domains[:${top_n}][] | to_entries[] | \"\(.key)\"" | while read -r blocked_domain; do
+    tmp_keys_file=$(mktemp "${state_dir}/blocked_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "blocked_keys_tmp.XXXXXX")
+    printf "%s\n" "${blocked_response}" | jq -r ".top_blocked_domains[:${top_n}][] | to_entries[] | \"\(.key)\"" | \
+    while read -r blocked_domain; do
         blocked_key=$(printf "%s" "${blocked_domain}" | tr -c 'a-zA-Z0-9' '_')
         case "${blocked_key}" in
             [0-9]*)
                 blocked_key="blocked_${blocked_key}"
                 ;;
         esac
+        printf "%s\n" "${blocked_key}" >> "${tmp_keys_file}"
         if [ "${#blocked_domain}" -gt 19 ]; then
             label="$(printf "%s" "${blocked_domain}" | cut -c1-16)..."
         else
@@ -201,24 +222,66 @@ adguardhome_munin_config_blocked() {
             "${graph_type}" \
             ""
     done
+    if [ -f "${state_file}" ]; then
+        cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
+        mv "${tmp_keys_file}.merged" "${state_file}"
+        rm -f "${tmp_keys_file}"
+    else
+        mv "${tmp_keys_file}" "${state_file}"
+    fi
+    if [ ! -s "${state_file}" ]; then
+        adguardhome_munin_print \
+            "none" \
+            "" \
+            "" \
+            "${graph_draw}" \
+            "yes" \
+            "No blocked domains" \
+            "none" \
+            "" \
+            "0" \
+            "${graph_type}" \
+            ""
+    fi
 }
 
 adguardhome_munin_fetch_blocked() {
     blocked_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
-    blocked_count=$(printf "%s\n" "${blocked_response}" | jq '.top_blocked_domains | length')
-    if [ "${blocked_count}" -eq "0" ]; then
-        printf "none.value 0\n"
-        return
-    fi
-    printf "%s\n" "${blocked_response}" | jq -r ".top_blocked_domains[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | while read -r blocked_domain num_blocked; do
+    tmp_keys_file=$(mktemp "${state_dir}/blocked_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "blocked_keys_tmp.XXXXXX")
+    tmp_output_file=$(mktemp "${state_dir}/blocked_output_tmp.XXXXXX" 2>/dev/null || mktemp -t "blocked_output_tmp.XXXXXX")
+    printf "%s\n" "${blocked_response}" | jq -r ".top_blocked_domains[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
+    while read -r blocked_domain num_blocked; do
         blocked_key=$(printf "%s" "${blocked_domain}" | tr -c 'a-zA-Z0-9' '_')
         case "${blocked_key}" in
             [0-9]*)
                 blocked_key="blocked_${blocked_key}"
                 ;;
         esac
-        printf "%s.value %s\n" "${blocked_key}" "${num_blocked}"
+        printf "%s\n" "${blocked_key}" >> "${tmp_keys_file}"
+        printf "%s.value %s\n" "${blocked_key}" "${num_blocked}" >> "${tmp_output_file}"
     done
+    if [ -f "${state_file}" ]; then
+        cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
+        mv "${tmp_keys_file}.merged" "${state_file}"
+        rm -f "${tmp_keys_file}"
+    else
+        mv "${tmp_keys_file}" "${state_file}"
+    fi
+    all_keys=$(cat "${state_file}")
+    if [ -z "${all_keys}" ]; then
+        printf "none.value 0\n"
+        rm -f "${tmp_output_file}"
+        return
+    fi
+    for key in ${all_keys}; do
+        grep -qx "${key}" "${state_file}"
+        if grep -qx "${key}" "${tmp_keys_file}"; then
+            grep "^${key}\.value " "${tmp_output_file}" || printf "%s.value U\n" "${key}"
+        else
+            printf "%s.value U\n" "${key}"
+        fi
+    done
+    rm -f "${tmp_output_file}"
 }
 
 adguardhome_munin_config_clients() {
@@ -233,8 +296,42 @@ adguardhome_munin_config_clients() {
         "graph_vlabel queries" \
         "graph_width ${graph_width}"
     clients_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
-    clients_count=$(printf "%s\n" "${clients_response}" | jq '.top_clients | length')
-    if [ "${clients_count}" -eq "0" ]; then
+    tmp_keys_file=$(mktemp "${state_dir}/clients_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "clients_keys_tmp.XXXXXX")
+    printf "%s\n" "${clients_response}" | jq -r ".top_clients[:${top_n}][] | to_entries[] | \"\(.key)\"" | \
+    while read -r client; do
+        clients_key=$(printf "%s" "${client}" | tr -c 'a-zA-Z0-9' '_')
+        case "${clients_key}" in
+            [0-9]*)
+                clients_key="client_${clients_key}"
+                ;;
+        esac
+        printf "%s\n" "${clients_key}" >> "${tmp_keys_file}"
+        if [ "${#client}" -gt 19 ]; then
+            label="$(printf "%s" "${client}" | cut -c1-16)..."
+        else
+            label="${client}"
+        fi
+        adguardhome_munin_print \
+            "${clients_key}" \
+            "" \
+            "100000" \
+            "${graph_draw}" \
+            "yes" \
+            "${client}" \
+            "${label}" \
+            "" \
+            "0" \
+            "${graph_type}" \
+            "0:50000"
+    done
+    if [ -f "${state_file}" ]; then
+        cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
+        mv "${tmp_keys_file}.merged" "${state_file}"
+        rm -f "${tmp_keys_file}"
+    else
+        mv "${tmp_keys_file}" "${state_file}"
+    fi
+    if [ ! -s "${state_file}" ]; then
         adguardhome_munin_print \
             "none" \
             "" \
@@ -247,52 +344,44 @@ adguardhome_munin_config_clients() {
             "0" \
             "${graph_type}" \
             ""
-        return
     fi
-    printf "%s\n" "${clients_response}" |
-    jq -r ".top_clients[:${top_n}][] | to_entries[] | \"\(.key)\"" | while read -r client; do
-        clients_key=$(printf "%s" "${client}" | tr -c 'a-zA-Z0-9' '_')
-        case "${clients_key}" in
-            [0-9]*)
-                clients_key="client_${clients_key}"
-                ;;
-        esac
-        if [ "${#client}" -gt 19 ]; then
-            label="$(printf "%s" "${client}" | cut -c1-16)..."
-        else
-            label="${client}"
-        fi
-        adguardhome_munin_print \
-            "${clients_key}" \
-            "" \
-            "" \
-            "${graph_draw}" \
-            "yes" \
-            "${client}" \
-            "${label}" \
-            "" \
-            "0" \
-            "${graph_type}" \
-            ""
-    done
 }
 
 adguardhome_munin_fetch_clients() {
     clients_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
-    clients_count=$(printf "%s\n" "${clients_response}" | jq '.top_clients | length')
-    if [ "${clients_count}" -eq "0" ]; then
-        printf "none.value 0\n"
-        return
-    fi
-    printf "%s\n" "${clients_response}" | jq -r ".top_clients[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | while read -r client num_queries; do
+    tmp_keys_file=$(mktemp "${state_dir}/clients_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "clients_keys_tmp.XXXXXX")
+    tmp_output_file=$(mktemp "${state_dir}/clients_output_tmp.XXXXXX" 2>/dev/null || mktemp -t "clients_output_tmp.XXXXXX")
+    printf "%s\n" "${clients_response}" | jq -r ".top_clients[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
+    while read -r client num_queries; do
         clients_key=$(printf "%s" "${client}" | tr -c 'a-zA-Z0-9' '_')
         case "${clients_key}" in
             [0-9]*)
                 clients_key="client_${clients_key}"
                 ;;
         esac
-        printf "%s.value %s\n" "${clients_key}" "${num_queries}"
+        printf "%s\n" "${clients_key}" >> "${tmp_keys_file}"
+        printf "%s.value %s\n" "${clients_key}" "${num_queries}" >> "${tmp_output_file}"
     done
+    if [ -f "${state_file}" ]; then
+        cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
+        mv "${tmp_keys_file}.merged" "${state_file}"
+    else
+        mv "${tmp_keys_file}" "${state_file}"
+    fi
+    all_keys=$(cat "${state_file}")
+    if [ -z "${all_keys}" ]; then
+        printf "none.value 0\n"
+        rm -f "${tmp_output_file}"
+        return
+    fi
+    for key in ${all_keys}; do
+        if grep -qxF "${key}" "${tmp_keys_file}"; then
+            grep "^${key}\.value " "${tmp_output_file}" || printf "%s.value U\n" "${key}"
+        else
+            printf "%s.value U\n" "${key}"
+        fi
+    done
+    rm -f "${tmp_keys_file}" "${tmp_output_file}"
 }
 
 adguardhome_munin_config_domains() {
@@ -307,8 +396,42 @@ adguardhome_munin_config_domains() {
         "graph_vlabel queries" \
         "graph_width ${graph_width}"
     domains_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
-    domains_count=$(printf "%s\n" "${domains_response}" | jq '.top_queried_domains | length')
-    if [ "${domains_count}" -eq "0" ]; then
+    tmp_keys_file=$(mktemp "${state_dir}/domains_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "domains_keys_tmp.XXXXXX")
+    printf "%s\n" "${domains_response}" | jq -r ".top_queried_domains[:${top_n}][] | to_entries[] | \"\(.key)\"" | \
+    while read -r domain; do
+        domains_key=$(printf "%s" "${domain}" | tr -c 'a-zA-Z0-9' '_')
+        case "${domains_key}" in
+            [0-9]*)
+                domains_key="domain_${domains_key}"
+                ;;
+        esac
+        printf "%s\n" "${domains_key}" >> "${tmp_keys_file}"
+        if [ "${#domain}" -gt 19 ]; then
+            label="$(printf "%s" "${domain}" | cut -c1-16)..."
+        else
+            label="${domain}"
+        fi
+        adguardhome_munin_print \
+            "${domains_key}" \
+            "" \
+            "100000" \
+            "${graph_draw}" \
+            "yes" \
+            "${domain}" \
+            "${label}" \
+            "" \
+            "0" \
+            "${graph_type}" \
+            "0:50000"
+    done
+    if [ -f "${state_file}" ]; then
+        cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
+        mv "${tmp_keys_file}.merged" "${state_file}"
+        rm -f "${tmp_keys_file}"
+    else
+        mv "${tmp_keys_file}" "${state_file}"
+    fi
+    if [ ! -s "${state_file}" ]; then
         adguardhome_munin_print \
             "none" \
             "" \
@@ -321,52 +444,44 @@ adguardhome_munin_config_domains() {
             "0" \
             "${graph_type}" \
             ""
-        return
     fi
-    printf "%s\n" "${domains_response}" |
-    jq -r ".top_queried_domains[:${top_n}][] | to_entries[] | \"\(.key)\"" | while read -r domain; do
-        domains_key=$(printf "%s" "${domain}" | tr -c 'a-zA-Z0-9' '_')
-        case "${domains_key}" in
-            [0-9]*)
-                domains_key="domain_${domains_key}"
-                ;;
-        esac
-        if [ "${#domain}" -gt 19 ]; then
-            label="$(printf "%s" "${domain}" | cut -c1-16)..."
-        else
-            label="${domain}"
-        fi
-        adguardhome_munin_print \
-            "${domains_key}" \
-            "" \
-            "" \
-            "${graph_draw}" \
-            "yes" \
-            "${domain}" \
-            "${label}" \
-            "" \
-            "0" \
-            "${graph_type}" \
-            ""
-    done
 }
 
 adguardhome_munin_fetch_domains() {
     domains_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
-    domains_count=$(printf "%s\n" "${domains_response}" | jq '.top_queried_domains | length')
-    if [ "${domains_count}" -eq "0" ]; then
-        printf "none.value 0\n"
-        return
-    fi
-    printf "%s\n" "${domains_response}" | jq -r ".top_queried_domains[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | while read -r domain num_queries; do
+    tmp_keys_file=$(mktemp "${state_dir}/domains_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "domains_keys_tmp.XXXXXX")
+    tmp_output_file=$(mktemp "${state_dir}/domains_output_tmp.XXXXXX" 2>/dev/null || mktemp -t "domains_output_tmp.XXXXXX")
+    printf "%s\n" "${domains_response}" | jq -r ".top_queried_domains[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
+    while read -r domain num_queries; do
         domains_key=$(printf "%s" "${domain}" | tr -c 'a-zA-Z0-9' '_')
         case "${domains_key}" in
             [0-9]*)
                 domains_key="domain_${domains_key}"
                 ;;
         esac
-        printf "%s.value %s\n" "${domains_key}" "${num_queries}"
+        printf "%s\n" "${domains_key}" >> "${tmp_keys_file}"
+        printf "%s.value %s\n" "${domains_key}" "${num_queries}" >> "${tmp_output_file}"
     done
+    if [ -f "${state_file}" ]; then
+        cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
+        mv "${tmp_keys_file}.merged" "${state_file}"
+    else
+        mv "${tmp_keys_file}" "${state_file}"
+    fi
+    all_keys=$(cat "${state_file}")
+    if [ -z "${all_keys}" ]; then
+        printf "none.value 0\n"
+        rm -f "${tmp_output_file}"
+        return
+    fi
+    for key in ${all_keys}; do
+        if grep -qxF "${key}" "${tmp_keys_file}"; then
+            grep "^${key}\.value " "${tmp_output_file}" || printf "%s.value U\n" "${key}"
+        else
+            printf "%s.value U\n" "${key}"
+        fi
+    done
+    rm -f "${tmp_keys_file}" "${tmp_output_file}"
 }
 
 adguardhome_munin_config_percent() {
@@ -383,7 +498,7 @@ adguardhome_munin_config_percent() {
     adguardhome_munin_print \
         "percent_blocked" \
         "" \
-        "" \
+        "90" \
         "${graph_draw}" \
         "yes" \
         "AdGuardHome percent blocked" \
@@ -391,11 +506,15 @@ adguardhome_munin_config_percent() {
         "100" \
         "0" \
         "${graph_type}" \
-        ""
+        "0:75"
 }
 
 adguardhome_munin_fetch_percent() {
     percent_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
+    if [ -z "${percent_response}" ]; then
+        printf "percent_blocked.value U\n"
+        return
+    fi
     num_dns_queries=$(printf "%s" "${percent_response}" | jq -r '.num_dns_queries')
     num_blocked_filtering=$(printf "%s" "${percent_response}" | jq -r '.num_blocked_filtering')
     if [ -z "${num_dns_queries}" ] || [ "${num_dns_queries}" -eq "0" ]; then
@@ -436,6 +555,10 @@ adguardhome_munin_fetch_processing() {
         | jq -r '.avg_processing_time' \
         | awk -F. '{ printf "%d.%s\n", $1, substr($2 "000", 1, 3) }' \
         | sed 's/\.0*$//;s/\(\.[0-9]*[1-9]\)0*$/\1/')
+    if [ -z "${avg_processing_time}" ]; then
+        printf "avg_processing_time.value U\n"
+        return
+    fi
     printf "avg_processing_time.value %s\n" "${avg_processing_time}"
 }
 
@@ -453,7 +576,7 @@ adguardhome_munin_config_queries() {
     adguardhome_munin_print \
         "num_dns_queries" \
         "" \
-        "" \
+        "200000" \
         "${graph_draw}" \
         "yes" \
         "AdGuardHome DNS queries" \
@@ -461,11 +584,11 @@ adguardhome_munin_config_queries() {
         "" \
         "0" \
         "${graph_type}" \
-        ""
+        "0:100000"
     adguardhome_munin_print \
         "num_blocked_filtering" \
         "" \
-        "" \
+        "100000" \
         "${graph_draw}" \
         "yes" \
         "AdGuardHome blocked filtering" \
@@ -473,11 +596,11 @@ adguardhome_munin_config_queries() {
         "" \
         "0" \
         "${graph_type}" \
-        ""
+        "0:50000"
     adguardhome_munin_print \
         "num_replaced_safebrowsing" \
         "" \
-        "" \
+        "100000" \
         "${graph_draw}" \
         "yes" \
         "AdGuardHome replaced safebrowsing" \
@@ -485,11 +608,11 @@ adguardhome_munin_config_queries() {
         "" \
         "0" \
         "${graph_type}" \
-        ""
+        "0:50000"
     adguardhome_munin_print \
         "num_replaced_parental" \
         "" \
-        "" \
+        "100000" \
         "${graph_draw}" \
         "yes" \
         "AdGuardHome replaced parental" \
@@ -497,11 +620,11 @@ adguardhome_munin_config_queries() {
         "" \
         "0" \
         "${graph_type}" \
-        ""
+        "0:50000"
     adguardhome_munin_print \
         "num_replaced_safesearch" \
         "" \
-        "" \
+        "100000" \
         "${graph_draw}" \
         "yes" \
         "AdGuardHome replaced safesearch" \
@@ -509,11 +632,19 @@ adguardhome_munin_config_queries() {
         "" \
         "0" \
         "${graph_type}" \
-        ""
+        "0:50000"
 }
 
 adguardhome_munin_fetch_queries() {
     queries_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
+    if [ -z "${queries_response}" ]; then
+        printf "num_dns_queries.value U\n"
+        printf "num_blocked_filtering.value U\n"
+        printf "num_replaced_safebrowsing.value U\n"
+        printf "num_replaced_parental.value U\n"
+        printf "num_replaced_safesearch.value U\n"
+        return
+    fi
     num_dns_queries=$(printf "%s" "${queries_response}" | jq -r '.num_dns_queries')
     num_blocked_filtering=$(printf "%s" "${queries_response}" | jq -r '.num_blocked_filtering')
     num_replaced_safebrowsing=$(printf "%s" "${queries_response}" | jq -r '.num_replaced_safebrowsing')
@@ -540,7 +671,7 @@ adguardhome_munin_config_status() {
     adguardhome_munin_print \
         "protection_status" \
         "" \
-        "" \
+        "0:1" \
         "${graph_draw}" \
         "yes" \
         "AdGuardHome protection status" \
@@ -549,7 +680,7 @@ adguardhome_munin_config_status() {
         "-1" \
         "1" \
         "${graph_type}" \
-        ""
+        "1:1"
 }
 
 adguardhome_munin_fetch_status() {
@@ -581,30 +712,16 @@ adguardhome_munin_config_upstreams() {
         "graph_vlabel queries" \
         "graph_width ${graph_width}"
     upstreams_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
-    upstreams_count=$(printf "%s\n" "${upstreams_response}" | jq '.top_upstreams_responses | length')
-    if [ "${upstreams_count}" -eq "0" ]; then
-        adguardhome_munin_print \
-            "none" \
-            "" \
-            "" \
-            "${graph_draw}" \
-            "yes" \
-            "No upstreams" \
-            "none" \
-            "" \
-            "0" \
-            "${graph_type}" \
-            ""
-        return
-    fi
-    printf "%s\n" "${upstreams_response}" |
-    jq -r ".top_upstreams_responses[:${top_n}][] | to_entries[] | \"\(.key)\"" | while read -r upstream; do
+    tmp_keys_file=$(mktemp "${state_dir}/upstreams_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "upstreams_keys_tmp.XXXXXX")
+    printf "%s\n" "${upstreams_response}" | jq -r ".top_upstreams_responses[:${top_n}][] | to_entries[] | \"\(.key)\"" | \
+    while read -r upstream; do
         upstreams_key=$(printf "%s" "${upstream}" | tr -c 'a-zA-Z0-9' '_')
         case "${upstreams_key}" in
             [0-9]*)
                 upstreams_key="upstreams_${upstreams_key}"
                 ;;
         esac
+        printf "%s\n" "${upstreams_key}" >> "${tmp_keys_file}"
         if [ "${#upstream}" -gt 19 ]; then
             label="$(printf "%s" "${upstream}" | cut -c1-16)..."
         else
@@ -623,24 +740,64 @@ adguardhome_munin_config_upstreams() {
             "${graph_type}" \
             ""
     done
+    if [ -f "${state_file}" ]; then
+        cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
+        mv "${tmp_keys_file}.merged" "${state_file}"
+        rm -f "${tmp_keys_file}"
+    else
+        mv "${tmp_keys_file}" "${state_file}"
+    fi
+    if [ ! -s "${state_file}" ]; then
+        adguardhome_munin_print \
+            "none" \
+            "" \
+            "" \
+            "${graph_draw}" \
+            "yes" \
+            "No upstreams" \
+            "none" \
+            "" \
+            "0" \
+            "${graph_type}" \
+            ""
+    fi
 }
 
 adguardhome_munin_fetch_upstreams() {
     upstreams_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
-    upstreams_count=$(printf "%s\n" "${upstreams_response}" | jq '.top_upstreams_responses | length')
-    if [ "${upstreams_count}" -eq "0" ]; then
-        printf "none.value 0\n"
-        return
-    fi
-    printf "%s\n" "${upstreams_response}" | jq -r ".top_upstreams_responses[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | while read -r upstream num_responses; do
+    tmp_keys_file=$(mktemp "${state_dir}/upstreams_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "upstreams_keys_tmp.XXXXXX")
+    tmp_output_file=$(mktemp "${state_dir}/upstreams_output_tmp.XXXXXX" 2>/dev/null || mktemp -t "upstreams_output_tmp.XXXXXX")
+    printf "%s\n" "${upstreams_response}" | jq -r ".top_upstreams_responses[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
+    while read -r upstream num_responses; do
         upstreams_key=$(printf "%s" "${upstream}" | tr -c 'a-zA-Z0-9' '_')
         case "${upstreams_key}" in
             [0-9]*)
                 upstreams_key="upstreams_${upstreams_key}"
                 ;;
         esac
-        printf "%s.value %s\n" "${upstreams_key}" "${num_responses}"
+        printf "%s\n" "${upstreams_key}" >> "${tmp_keys_file}"
+        printf "%s.value %s\n" "${upstreams_key}" "${num_responses}" >> "${tmp_output_file}"
     done
+    if [ -f "${state_file}" ]; then
+        cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
+        mv "${tmp_keys_file}.merged" "${state_file}"
+    else
+        mv "${tmp_keys_file}" "${state_file}"
+    fi
+    all_keys=$(cat "${state_file}")
+    if [ -z "${all_keys}" ]; then
+        printf "none.value 0\n"
+        rm -f "${tmp_output_file}"
+        return
+    fi
+    for key in ${all_keys}; do
+        if grep -qxF "${key}" "${tmp_keys_file}"; then
+            grep "^${key}\.value " "${tmp_output_file}" || printf "%s.value U\n" "${key}"
+        else
+            printf "%s.value U\n" "${key}"
+        fi
+    done
+    rm -f "${tmp_keys_file}" "${tmp_output_file}"
 }
 
 adguardhome_munin_config_upstreams_avg() {
@@ -655,30 +812,16 @@ adguardhome_munin_config_upstreams_avg() {
         "graph_vlabel seconds" \
         "graph_width ${graph_width}"
     upstreams_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
-    upstreams_avg_count=$(printf "%s\n" "${upstreams_response}" | jq '.top_upstreams_avg_time | length')
-    if [ "${upstreams_avg_count}" -eq "0" ]; then
-        adguardhome_munin_print \
-            "none" \
-            "" \
-            "" \
-            "${graph_draw}" \
-            "yes" \
-            "No upstreams average response time" \
-            "none" \
-            "" \
-            "0" \
-            "${graph_type}" \
-            ""
-        return
-    fi
-    printf "%s\n" "${upstreams_response}" |
-    jq -r ".top_upstreams_avg_time[:${top_n}][] | to_entries[] | \"\(.key)\"" | while read -r upstream; do
+    tmp_keys_file=$(mktemp "${state_dir}/upstreams_avg_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "upstreams_avg_keys_tmp.XXXXXX")
+    printf "%s\n" "${upstreams_response}" | jq -r ".top_upstreams_avg_time[:${top_n}][] | to_entries[] | \"\(.key)\"" | \
+    while read -r upstream; do
         upstreams_avg_key=$(printf "%s" "${upstream}" | tr -c 'a-zA-Z0-9' '_')
         case "${upstreams_avg_key}" in
             [0-9]*)
                 upstreams_avg_key="upstreams_avg_${upstreams_avg_key}"
                 ;;
         esac
+        printf "%s\n" "${upstreams_avg_key}" >> "${tmp_keys_file}"
         if [ "${#upstream}" -gt 19 ]; then
             label="$(printf "%s" "${upstream}" | cut -c1-16)..."
         else
@@ -697,16 +840,35 @@ adguardhome_munin_config_upstreams_avg() {
             "${graph_type}" \
             ""
     done
+    if [ -f "${state_file}" ]; then
+        cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
+        mv "${tmp_keys_file}.merged" "${state_file}"
+        rm -f "${tmp_keys_file}"
+    else
+        mv "${tmp_keys_file}" "${state_file}"
+    fi
+    if [ ! -s "${state_file}" ]; then
+        adguardhome_munin_print \
+            "none" \
+            "" \
+            "" \
+            "${graph_draw}" \
+            "yes" \
+            "No upstreams average response time" \
+            "none" \
+            "" \
+            "0" \
+            "${graph_type}" \
+            ""
+    fi
 }
 
 adguardhome_munin_fetch_upstreams_avg() {
     upstreams_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
-    upstreams_avg_count=$(printf "%s\n" "${upstreams_response}" | jq '.top_upstreams_avg_time | length')
-    if [ "${upstreams_avg_count}" -eq "0" ]; then
-        printf "none.value 0\n"
-        return
-    fi
-    printf "%s\n" "${upstreams_response}" | jq -r ".top_upstreams_avg_time[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | while read -r upstream avg_time; do
+    tmp_keys_file=$(mktemp "${state_dir}/upstreams_avg_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "upstreams_avg_keys_tmp.XXXXXX")
+    tmp_output_file=$(mktemp "${state_dir}/upstreams_avg_output_tmp.XXXXXX" 2>/dev/null || mktemp -t "upstreams_avg_output_tmp.XXXXXX")
+    printf "%s\n" "${upstreams_response}" | jq -r ".top_upstreams_avg_time[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
+    while read -r upstream avg_time; do
         upstreams_avg_key=$(printf "%s" "${upstream}" | tr -c 'a-zA-Z0-9' '_')
         case "${upstreams_avg_key}" in
             [0-9]*)
@@ -714,8 +876,29 @@ adguardhome_munin_fetch_upstreams_avg() {
                 ;;
         esac
         upstreams_avg_time=$(printf "%s" "${avg_time}" | awk -F. '{ printf "%d.%s\n", $1, substr($2 "000", 1, 3) }' | sed 's/\.0*$//;s/\(\.[0-9]*[1-9]\)0*$/\1/')
-        printf "%s.value %s\n" "${upstreams_avg_key}" "${upstreams_avg_time}"
+        printf "%s\n" "${upstreams_avg_key}" >> "${tmp_keys_file}"
+        printf "%s.value %s\n" "${upstreams_avg_key}" "${upstreams_avg_time}" >> "${tmp_output_file}"
     done
+    if [ -f "${state_file}" ]; then
+        cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
+        mv "${tmp_keys_file}.merged" "${state_file}"
+    else
+        mv "${tmp_keys_file}" "${state_file}"
+    fi
+    all_keys=$(cat "${state_file}")
+    if [ -z "${all_keys}" ]; then
+        printf "none.value 0\n"
+        rm -f "${tmp_output_file}"
+        return
+    fi
+    for key in ${all_keys}; do
+        if grep -qxF "${key}" "${tmp_keys_file}"; then
+            grep "^${key}\.value " "${tmp_output_file}" || printf "%s.value U\n" "${key}"
+        else
+            printf "%s.value U\n" "${key}"
+        fi
+    done
+    rm -f "${tmp_keys_file}" "${tmp_output_file}"
 }
 
 adguardhome_munin_fetch_handler() {
