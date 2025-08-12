@@ -105,19 +105,19 @@ Set the following environment variables as needed (defaults shown):
 
 Example for `/etc/munin/plugin-conf.d/adguardhome_munin_`:
 
-    ```ini
-    [adguardhome_munin_*]
-        # These fields are required
-        env.username your_agh_username
-        env.password your_agh_password
+```ini
+[adguardhome_munin_*]
+    # These fields are required
+    env.username your_agh_username
+    env.password your_agh_password
 
-        # These fields are optional, unless you want to override the defaults
-        # as shown below
-        env.proto http
-        env.host 192.168.1.123
-        env.port 80
-        env.top_n 20
-    ```
+    # These fields are optional, unless you want to override the defaults
+    # as shown below
+    env.proto http
+    env.host 192.168.1.123
+    env.port 80
+    env.top_n 20
+```
 
 ---
 
