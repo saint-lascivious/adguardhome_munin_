@@ -6,15 +6,16 @@ Munin plugins for monitoring various AdGuardHome statistics.
 
 ## Overview
 
-`adguardhome_munin_` is a POSIX shell Munin wildcard plugin, providing a suite of metrics for monitoring AdGuardHome instances.
+`adguardhome_munin_` is a POSIX shell Munin wildcard plugin, providing a suite of graphs for monitoring AdGuardHome instances.
 
 ## Features
 
-- Track top blocked domains, clients, and queried domains
+- Track the top N blocked domains, clients, and queried domains
 - Monitor DNS query counts, blocked percentages, and processing times
 - Graph upstream server usage and average response times
-- Automatic detection of AdGuardHome presence for plugin suitability
-- Handles empty data gracefully for robust Munin graphing
+- Display AdGuardHome protection status
+- Handles empty data gracefully
+- State files persist dynamic data (such as top N graph items)
 
 ---
 
@@ -58,7 +59,17 @@ Munin plugins for monitoring various AdGuardHome statistics.
         # ...repeat for other plugins as desired
     ```
 
-    The full list of plugins is: `adguardhome_munin_blocked`, `adguardhome_munin_clients`, `adguardhome_munin_domains`, `adguardhome_munin_percent`, `adguardhome_munin_processing`, `adguardhome_munin_queries`, `adguardhome_munin_status`, `adguardhome_munin_upstreams` and `adguardhome_munin_upstreams_avg`.
+    The full list of plugins is:
+    `adguardhome_munin_blocked`, `adguardhome_munin_clients`, `adguardhome_munin_domains`, `adguardhome_munin_percent`, `adguardhome_munin_processing`, `adguardhome_munin_queries`, `adguardhome_munin_status`, `adguardhome_munin_upstreams` and `adguardhome_munin_upstreams_avg`.
+
+    You can symlink all of them at once with:
+    ```sh
+        # Create symbolic links for all plugins at once
+        for plugin in blocked clients domains percent processing queries status upstreams upstreams_avg; do
+            ln -s /usr/share/munin/plugins/adguardhome_munin_ \
+                /etc/munin/plugins/adguardhome_munin_$plugin
+        done
+    ```
 
 4. Restart the Munin node
     ```sh
