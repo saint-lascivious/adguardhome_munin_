@@ -21,11 +21,11 @@ Munin plugins for monitoring various AdGuardHome statistics.
 ## Requirements
 
 - [Munin](http://munin-monitoring.org/)
-    `munin`, `munin-node` (not necessarily on the same host as each other)
+    `munin` and `munin-node` configured and running (not necessarily on the same host as each other)
 - [AdGuardHome](https://adguard.com)
-    AdGuardHome running and accessible via its API (not necessarily on the same host as Munin)
-- [curl](https://curl.se/), [jq](https://jqlang.org/), and [mktemp](https://www.gnu.org/software/coreutils/manual/html_node/mktemp-invocation.html)
-    These are used for API calls, JSON parsing, and temporary file handling.
+    `AdGuardHome` configured, running and accessible via its API (not necessarily on the same host as Munin)
+- [curl](https://curl.se/), [jq](https://jqlang.org/), and [mktemp](https://www.gnu.org/software/coreutils/manual/html_node/mktemp-invocation.html) installed on the system where the plugin is run.
+    These are used for API calls, JSON parsing, and temporary file handling respectively.
 
 ---
 
@@ -100,7 +100,7 @@ Set the following environment variables as needed (defaults shown):
 - `top_n`
     - The number of top items to display in graphs (e.g., top blocked domains, clients, etc.).
     - Large values may degrade performance.
-    - Maximum `100`, minimum `1` (greater or lower values will be adjusted to these limits).
+    - Maximum `20`, minimum `1` (greater or lower values will be adjusted to these limits).
     - Default: `10`
 
 Example for `/etc/munin/plugin-conf.d/adguardhome_munin_`:

@@ -32,6 +32,7 @@ esac
 adguardhome_munin_plugin_id="$(printf "%s" "${script_path}" | sed -e 's/^.*adguardhome_munin_//')"
 
 if [ -z "${adguardhome_munin_plugin_id}" ]; then
+    # This should never happen
     adguardhome_munin_plugin_id="percent"
 fi
 
@@ -45,12 +46,10 @@ api="${pref}://${host}:${port}"
 
 top_n="${top_n:-"10"}"
 
-if [ "${top_n}" -gt "100" ]; then
-    top_n="100"
-else
-    if [ "${top_n}" -lt "1" ]; then
-        top_n="1"
-    fi
+if [ "${top_n}" -gt "20" ]; then
+    top_n="20"
+elif [ "${top_n}" -lt "1" ]; then
+    top_n="1"
 fi
 
 user="${username:-}"
@@ -75,6 +74,17 @@ cookie_file=$(mktemp "${state_dir}/cookie_file.XXXXXX" 2>/dev/null || mktemp -t 
 trap 'rm -f "${cookie_file}"' EXIT
 
 adguardhome_munin_print() {
+    #  ${1} = key
+    #  ${2} = colour
+    #  ${3} = critical
+    #  ${4} = draw
+    #  ${5} = graph
+    #  ${6} = info
+    #  ${7} = label
+    #  ${8} = max
+    #  ${9} = min
+    # ${10} = type
+    # ${11} = warning
     if ! printf %s "${1}" | grep -Eq '^[a-zA-Z_][a-zA-Z0-9_]*$'; then
         printf "%s\n" "Error: Invalid or missing key." >&2
         exit 1
@@ -140,17 +150,41 @@ adguardhome_munin_print() {
     fi
 }
 
-adguardhome_munin_print_state_keys() {
+adguardhome_munin_print_from_state() {
+    #  ${1} = state_file
+    #  ${2} = plugin_type (domain, client, upstream, etc)
+    #  ${3} = colour
+    #  ${4} = critical
+    #  ${5} = draw
+    #  ${6} = graph
+    #  ${7} = info
+    #  ${8} = max
+    #  ${9} = min
+    # ${10} = type
+    # ${11} = warning
+    # ${12} = none_info
+    # ${13} = none_label
     if [ -s "${1}" ]; then
-        while IFS= read -r key; do
+        while IFS= read -r raw; do
+            key=$(printf "%s" "${raw}" | tr -c 'a-zA-Z0-9' '_')
+            case "${key}" in
+                [0-9]*)
+                    key="${2}_${key}"
+                    ;;
+            esac
+            if [ "${#raw}" -gt 19 ]; then
+                label="$(printf "%s" "${raw}" | cut -c1-16)..."
+            else
+                label="${raw}"
+            fi
             adguardhome_munin_print \
                 "${key}" \
-                "${2}" \
                 "${3}" \
                 "${4}" \
                 "${5}" \
                 "${6}" \
-                "${7}" \
+                "${raw}" \
+                "${label}" \
                 "${8}" \
                 "${9}" \
                 "${10}" \
@@ -159,16 +193,16 @@ adguardhome_munin_print_state_keys() {
     else
         adguardhome_munin_print \
             "none" \
-            "" \
-            "" \
+            "${3}" \
             "${4}" \
             "${5}" \
+            "${6}" \
             "${12}" \
             "${13}" \
-            "" \
+            "${8}" \
             "${9}" \
             "${10}" \
-            ""
+            "${11}"
     fi
 }
 
@@ -233,30 +267,7 @@ adguardhome_munin_config_blocked() {
     tmp_keys_file=$(mktemp "${state_dir}/blocked_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "blocked_keys_tmp.XXXXXX")
     printf "%s\n" "${blocked_response}" | jq -r ".top_blocked_domains[:${top_n}][] | to_entries[] | \"\(.key)\"" | \
     while read -r blocked_domain; do
-        blocked_key=$(printf "%s" "${blocked_domain}" | tr -c 'a-zA-Z0-9' '_')
-        case "${blocked_key}" in
-            [0-9]*)
-                blocked_key="blocked_${blocked_key}"
-                ;;
-        esac
-        printf "%s\n" "${blocked_key}" >> "${tmp_keys_file}"
-        if [ "${#blocked_domain}" -gt 19 ]; then
-            label="$(printf "%s" "${blocked_domain}" | cut -c1-16)..."
-        else
-            label="${blocked_domain}"
-        fi
-        adguardhome_munin_print \
-            "${blocked_key}" \
-            "" \
-            "" \
-            "${graph_draw}" \
-            "yes" \
-            "${blocked_domain}" \
-            "${label}" \
-            "" \
-            "0" \
-            "${graph_type}" \
-            ""
+        printf "%s\n" "${blocked_domain}" >> "${tmp_keys_file}"
     done
     if [ -s "${tmp_keys_file}" ]; then
         if [ -f "${state_file}" ]; then
@@ -267,8 +278,9 @@ adguardhome_munin_config_blocked() {
         fi
     fi
     rm -f "${tmp_keys_file}"
-    adguardhome_munin_print_state_keys \
+    adguardhome_munin_print_from_state \
         "${state_file}" \
+        "blocked" \
         "" \
         "" \
         "${graph_draw}" \
@@ -289,37 +301,36 @@ adguardhome_munin_fetch_blocked() {
     tmp_output_file=$(mktemp "${state_dir}/blocked_output_tmp.XXXXXX" 2>/dev/null || mktemp -t "blocked_output_tmp.XXXXXX")
     printf "%s\n" "${blocked_response}" | jq -r ".top_blocked_domains[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
     while read -r blocked_domain num_blocked; do
-        blocked_key=$(printf "%s" "${blocked_domain}" | tr -c 'a-zA-Z0-9' '_')
-        case "${blocked_key}" in
+        printf "%s\n" "${blocked_domain}" >> "${tmp_keys_file}"
+        key=$(printf "%s" "${blocked_domain}" | tr -c 'a-zA-Z0-9' '_')
+        case "${key}" in
             [0-9]*)
-                blocked_key="blocked_${blocked_key}"
+                key="blocked_${key}"
                 ;;
         esac
-        printf "%s\n" "${blocked_key}" >> "${tmp_keys_file}"
-        printf "%s.value %s\n" "${blocked_key}" "${num_blocked}" >> "${tmp_output_file}"
+        printf "%s.value %s\n" "${key}" "${num_blocked}" >> "${tmp_output_file}"
     done
     if [ -f "${state_file}" ]; then
         cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
         mv "${tmp_keys_file}.merged" "${state_file}"
-        rm -f "${tmp_keys_file}"
     else
         mv "${tmp_keys_file}" "${state_file}"
     fi
-    all_keys=$(cat "${state_file}")
-    if [ -z "${all_keys}" ]; then
+    if [ ! -s "${state_file}" ]; then
         printf "none.value 0\n"
         rm -f "${tmp_output_file}"
         return
     fi
-    for key in ${all_keys}; do
-        grep -qx "${key}" "${state_file}"
-        if grep -qx "${key}" "${tmp_keys_file}"; then
-            grep "^${key}\.value " "${tmp_output_file}" || printf "%s.value U\n" "${key}"
-        else
-            printf "%s.value U\n" "${key}"
-        fi
-    done
-    rm -f "${tmp_output_file}"
+    while IFS= read -r blocked_domain; do
+        key=$(printf "%s" "${blocked_domain}" | tr -c 'a-zA-Z0-9' '_')
+        case "${key}" in
+            [0-9]*)
+                key="blocked_${key}"
+                ;;
+        esac
+        grep "^${key}\.value " "${tmp_output_file}" || printf "%s.value U\n" "${key}"
+    done < "${state_file}"
+    rm -f "${tmp_keys_file}" "${tmp_output_file}"
 }
 
 adguardhome_munin_config_clients() {
@@ -337,30 +348,7 @@ adguardhome_munin_config_clients() {
     tmp_keys_file=$(mktemp "${state_dir}/clients_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "clients_keys_tmp.XXXXXX")
     printf "%s\n" "${clients_response}" | jq -r ".top_clients[:${top_n}][] | to_entries[] | \"\(.key)\"" | \
     while read -r client; do
-        clients_key=$(printf "%s" "${client}" | tr -c 'a-zA-Z0-9' '_')
-        case "${clients_key}" in
-            [0-9]*)
-                clients_key="client_${clients_key}"
-                ;;
-        esac
-        printf "%s\n" "${clients_key}" >> "${tmp_keys_file}"
-        if [ "${#client}" -gt 19 ]; then
-            label="$(printf "%s" "${client}" | cut -c1-16)..."
-        else
-            label="${client}"
-        fi
-        adguardhome_munin_print \
-            "${clients_key}" \
-            "" \
-            "100000" \
-            "${graph_draw}" \
-            "yes" \
-            "${client}" \
-            "${label}" \
-            "" \
-            "0" \
-            "${graph_type}" \
-            "0:50000"
+        printf "%s\n" "${client}" >> "${tmp_keys_file}"
     done
     if [ -s "${tmp_keys_file}" ]; then
         if [ -f "${state_file}" ]; then
@@ -371,14 +359,14 @@ adguardhome_munin_config_clients() {
         fi
     fi
     rm -f "${tmp_keys_file}"
-    adguardhome_munin_print_state_keys \
+    adguardhome_munin_print_from_state \
         "${state_file}" \
+        "client" \
         "" \
         "100000" \
         "${graph_draw}" \
         "yes" \
-        "AdGuard Home clients" \
-        "client" \
+        "" \
         "" \
         "0" \
         "${graph_type}" \
@@ -393,14 +381,14 @@ adguardhome_munin_fetch_clients() {
     tmp_output_file=$(mktemp "${state_dir}/clients_output_tmp.XXXXXX" 2>/dev/null || mktemp -t "clients_output_tmp.XXXXXX")
     printf "%s\n" "${clients_response}" | jq -r ".top_clients[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
     while read -r client num_queries; do
-        clients_key=$(printf "%s" "${client}" | tr -c 'a-zA-Z0-9' '_')
-        case "${clients_key}" in
+        printf "%s\n" "${client}" >> "${tmp_keys_file}"
+        key=$(printf "%s" "${client}" | tr -c 'a-zA-Z0-9' '_')
+        case "${key}" in
             [0-9]*)
-                clients_key="client_${clients_key}"
+                key="client_${key}"
                 ;;
         esac
-        printf "%s\n" "${clients_key}" >> "${tmp_keys_file}"
-        printf "%s.value %s\n" "${clients_key}" "${num_queries}" >> "${tmp_output_file}"
+        printf "%s.value %s\n" "${key}" "${num_queries}" >> "${tmp_output_file}"
     done
     if [ -f "${state_file}" ]; then
         cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
@@ -408,19 +396,20 @@ adguardhome_munin_fetch_clients() {
     else
         mv "${tmp_keys_file}" "${state_file}"
     fi
-    all_keys=$(cat "${state_file}")
-    if [ -z "${all_keys}" ]; then
+    if [ ! -s "${state_file}" ]; then
         printf "none.value 0\n"
         rm -f "${tmp_output_file}"
         return
     fi
-    for key in ${all_keys}; do
-        if grep -qxF "${key}" "${tmp_keys_file}"; then
-            grep "^${key}\.value " "${tmp_output_file}" || printf "%s.value U\n" "${key}"
-        else
-            printf "%s.value U\n" "${key}"
-        fi
-    done
+    while IFS= read -r client; do
+        key=$(printf "%s" "${client}" | tr -c 'a-zA-Z0-9' '_')
+        case "${key}" in
+            [0-9]*)
+                key="client_${key}"
+                ;;
+        esac
+        grep "^${key}\.value " "${tmp_output_file}" || printf "%s.value U\n" "${key}"
+    done < "${state_file}"
     rm -f "${tmp_keys_file}" "${tmp_output_file}"
 }
 
@@ -439,45 +428,31 @@ adguardhome_munin_config_domains() {
     tmp_keys_file=$(mktemp "${state_dir}/domains_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "domains_keys_tmp.XXXXXX")
     printf "%s\n" "${domains_response}" | jq -r ".top_queried_domains[:${top_n}][] | to_entries[] | \"\(.key)\"" | \
     while read -r domain; do
-        domains_key=$(printf "%s" "${domain}" | tr -c 'a-zA-Z0-9' '_')
-        case "${domains_key}" in
-            [0-9]*)
-                domains_key="domain_${domains_key}"
-                ;;
-        esac
-        printf "%s\n" "${domains_key}" >> "${tmp_keys_file}"
-        if [ "${#domain}" -gt 19 ]; then
-            label="$(printf "%s" "${domain}" | cut -c1-16)..."
-        else
-            label="${domain}"
-        fi
-        adguardhome_munin_print \
-            "${domains_key}" \
-            "" \
-            "100000" \
-            "${graph_draw}" \
-            "yes" \
-            "${domain}" \
-            "${label}" \
-            "" \
-            "0" \
-            "${graph_type}" \
-            "0:50000"
+        printf "%s\n" "${domain}" >> "${tmp_keys_file}"
     done
-    adguardhome_munin_print_state_keys \
-    "${state_file}" \
-    "" \
-    "100000" \
-    "${graph_draw}" \
-    "yes" \
-    "" \
-    "" \
-    "" \
-    "0" \
-    "${graph_type}" \
-    "0:50000" \
-    "No domains" \
-    "none"
+    if [ -s "${tmp_keys_file}" ]; then
+        if [ -f "${state_file}" ]; then
+            cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
+            mv "${tmp_keys_file}.merged" "${state_file}"
+        else
+            mv "${tmp_keys_file}" "${state_file}"
+        fi
+    fi
+    rm -f "${tmp_keys_file}"
+    adguardhome_munin_print_from_state \
+        "${state_file}" \
+        "domain" \
+        "" \
+        "100000" \
+        "${graph_draw}" \
+        "yes" \
+        "" \
+        "" \
+        "0" \
+        "${graph_type}" \
+        "0:50000" \
+        "No domains" \
+        "none"
 }
 
 adguardhome_munin_fetch_domains() {
@@ -486,14 +461,14 @@ adguardhome_munin_fetch_domains() {
     tmp_output_file=$(mktemp "${state_dir}/domains_output_tmp.XXXXXX" 2>/dev/null || mktemp -t "domains_output_tmp.XXXXXX")
     printf "%s\n" "${domains_response}" | jq -r ".top_queried_domains[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
     while read -r domain num_queries; do
-        domains_key=$(printf "%s" "${domain}" | tr -c 'a-zA-Z0-9' '_')
-        case "${domains_key}" in
+        printf "%s\n" "${domain}" >> "${tmp_keys_file}"
+        key=$(printf "%s" "${domain}" | tr -c 'a-zA-Z0-9' '_')
+        case "${key}" in
             [0-9]*)
-                domains_key="domain_${domains_key}"
+                key="domain_${key}"
                 ;;
         esac
-        printf "%s\n" "${domains_key}" >> "${tmp_keys_file}"
-        printf "%s.value %s\n" "${domains_key}" "${num_queries}" >> "${tmp_output_file}"
+        printf "%s.value %s\n" "${key}" "${num_queries}" >> "${tmp_output_file}"
     done
     if [ -f "${state_file}" ]; then
         cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
@@ -501,19 +476,20 @@ adguardhome_munin_fetch_domains() {
     else
         mv "${tmp_keys_file}" "${state_file}"
     fi
-    all_keys=$(cat "${state_file}")
-    if [ -z "${all_keys}" ]; then
+    if [ ! -s "${state_file}" ]; then
         printf "none.value 0\n"
         rm -f "${tmp_output_file}"
         return
     fi
-    for key in ${all_keys}; do
-        if grep -qxF "${key}" "${tmp_keys_file}"; then
-            grep "^${key}\.value " "${tmp_output_file}" || printf "%s.value U\n" "${key}"
-        else
-            printf "%s.value U\n" "${key}"
-        fi
-    done
+    while IFS= read -r domain; do
+        key=$(printf "%s" "${domain}" | tr -c 'a-zA-Z0-9' '_')
+        case "${key}" in
+            [0-9]*)
+                key="domain_${key}"
+                ;;
+        esac
+        grep "^${key}\.value " "${tmp_output_file}" || printf "%s.value U\n" "${key}"
+    done < "${state_file}"
     rm -f "${tmp_keys_file}" "${tmp_output_file}"
 }
 
@@ -748,30 +724,7 @@ adguardhome_munin_config_upstreams() {
     tmp_keys_file=$(mktemp "${state_dir}/upstreams_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "upstreams_keys_tmp.XXXXXX")
     printf "%s\n" "${upstreams_response}" | jq -r ".top_upstreams_responses[:${top_n}][] | to_entries[] | \"\(.key)\"" | \
     while read -r upstream; do
-        upstreams_key=$(printf "%s" "${upstream}" | tr -c 'a-zA-Z0-9' '_')
-        case "${upstreams_key}" in
-            [0-9]*)
-                upstreams_key="upstreams_${upstreams_key}"
-                ;;
-        esac
-        printf "%s\n" "${upstreams_key}" >> "${tmp_keys_file}"
-        if [ "${#upstream}" -gt 19 ]; then
-            label="$(printf "%s" "${upstream}" | cut -c1-16)..."
-        else
-            label="${upstream}"
-        fi
-        adguardhome_munin_print \
-            "${upstreams_key}" \
-            "" \
-            "" \
-            "${graph_draw}" \
-            "yes" \
-            "${upstream}" \
-            "${label}" \
-            "" \
-            "0" \
-            "${graph_type}" \
-            ""
+        printf "%s\n" "${upstream}" >> "${tmp_keys_file}"
     done
     if [ -s "${tmp_keys_file}" ]; then
         if [ -f "${state_file}" ]; then
@@ -782,8 +735,9 @@ adguardhome_munin_config_upstreams() {
         fi
     fi
     rm -f "${tmp_keys_file}"
-    adguardhome_munin_print_state_keys \
+    adguardhome_munin_print_from_state \
         "${state_file}" \
+        "upstreams" \
         "" \
         "" \
         "${graph_draw}" \
@@ -804,14 +758,14 @@ adguardhome_munin_fetch_upstreams() {
     tmp_output_file=$(mktemp "${state_dir}/upstreams_output_tmp.XXXXXX" 2>/dev/null || mktemp -t "upstreams_output_tmp.XXXXXX")
     printf "%s\n" "${upstreams_response}" | jq -r ".top_upstreams_responses[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
     while read -r upstream num_responses; do
-        upstreams_key=$(printf "%s" "${upstream}" | tr -c 'a-zA-Z0-9' '_')
-        case "${upstreams_key}" in
+        printf "%s\n" "${upstream}" >> "${tmp_keys_file}"
+        key=$(printf "%s" "${upstream}" | tr -c 'a-zA-Z0-9' '_')
+        case "${key}" in
             [0-9]*)
-                upstreams_key="upstreams_${upstreams_key}"
+                key="upstreams_${key}"
                 ;;
         esac
-        printf "%s\n" "${upstreams_key}" >> "${tmp_keys_file}"
-        printf "%s.value %s\n" "${upstreams_key}" "${num_responses}" >> "${tmp_output_file}"
+        printf "%s.value %s\n" "${key}" "${num_responses}" >> "${tmp_output_file}"
     done
     if [ -f "${state_file}" ]; then
         cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
@@ -819,19 +773,20 @@ adguardhome_munin_fetch_upstreams() {
     else
         mv "${tmp_keys_file}" "${state_file}"
     fi
-    all_keys=$(cat "${state_file}")
-    if [ -z "${all_keys}" ]; then
+    if [ ! -s "${state_file}" ]; then
         printf "none.value 0\n"
         rm -f "${tmp_output_file}"
         return
     fi
-    for key in ${all_keys}; do
-        if grep -qxF "${key}" "${tmp_keys_file}"; then
-            grep "^${key}\.value " "${tmp_output_file}" || printf "%s.value U\n" "${key}"
-        else
-            printf "%s.value U\n" "${key}"
-        fi
-    done
+    while IFS= read -r upstream; do
+        key=$(printf "%s" "${upstream}" | tr -c 'a-zA-Z0-9' '_')
+        case "${key}" in
+            [0-9]*)
+                key="upstreams_${key}"
+                ;;
+        esac
+        grep "^${key}\.value " "${tmp_output_file}" || printf "%s.value U\n" "${key}"
+    done < "${state_file}"
     rm -f "${tmp_keys_file}" "${tmp_output_file}"
 }
 
@@ -850,30 +805,7 @@ adguardhome_munin_config_upstreams_avg() {
     tmp_keys_file=$(mktemp "${state_dir}/upstreams_avg_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "upstreams_avg_keys_tmp.XXXXXX")
     printf "%s\n" "${upstreams_response}" | jq -r ".top_upstreams_avg_time[:${top_n}][] | to_entries[] | \"\(.key)\"" | \
     while read -r upstream; do
-        upstreams_avg_key=$(printf "%s" "${upstream}" | tr -c 'a-zA-Z0-9' '_')
-        case "${upstreams_avg_key}" in
-            [0-9]*)
-                upstreams_avg_key="upstreams_avg_${upstreams_avg_key}"
-                ;;
-        esac
-        printf "%s\n" "${upstreams_avg_key}" >> "${tmp_keys_file}"
-        if [ "${#upstream}" -gt 19 ]; then
-            label="$(printf "%s" "${upstream}" | cut -c1-16)..."
-        else
-            label="${upstream}"
-        fi
-        adguardhome_munin_print \
-            "${upstreams_avg_key}" \
-            "" \
-            "" \
-            "${graph_draw}" \
-            "yes" \
-            "${upstream}" \
-            "${label}" \
-            "" \
-            "0" \
-            "${graph_type}" \
-            ""
+        printf "%s\n" "${upstream}" >> "${tmp_keys_file}"
     done
     if [ -s "${tmp_keys_file}" ]; then
         if [ -f "${state_file}" ]; then
@@ -884,8 +816,9 @@ adguardhome_munin_config_upstreams_avg() {
         fi
     fi
     rm -f "${tmp_keys_file}"
-    adguardhome_munin_print_state_keys \
+    adguardhome_munin_print_from_state \
         "${state_file}" \
+        "upstreams_avg" \
         "" \
         "" \
         "${graph_draw}" \
@@ -906,15 +839,15 @@ adguardhome_munin_fetch_upstreams_avg() {
     tmp_output_file=$(mktemp "${state_dir}/upstreams_avg_output_tmp.XXXXXX" 2>/dev/null || mktemp -t "upstreams_avg_output_tmp.XXXXXX")
     printf "%s\n" "${upstreams_response}" | jq -r ".top_upstreams_avg_time[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
     while read -r upstream avg_time; do
-        upstreams_avg_key=$(printf "%s" "${upstream}" | tr -c 'a-zA-Z0-9' '_')
-        case "${upstreams_avg_key}" in
+        printf "%s\n" "${upstream}" >> "${tmp_keys_file}"
+        key=$(printf "%s" "${upstream}" | tr -c 'a-zA-Z0-9' '_')
+        case "${key}" in
             [0-9]*)
-                upstreams_avg_key="upstreams_avg_${upstreams_avg_key}"
+                key="upstreams_avg_${key}"
                 ;;
         esac
         upstreams_avg_time=$(printf "%s" "${avg_time}" | awk -F. '{ printf "%d.%s\n", $1, substr($2 "000", 1, 3) }' | sed 's/\.0*$//;s/\(\.[0-9]*[1-9]\)0*$/\1/')
-        printf "%s\n" "${upstreams_avg_key}" >> "${tmp_keys_file}"
-        printf "%s.value %s\n" "${upstreams_avg_key}" "${upstreams_avg_time}" >> "${tmp_output_file}"
+        printf "%s.value %s\n" "${key}" "${upstreams_avg_time}" >> "${tmp_output_file}"
     done
     if [ -f "${state_file}" ]; then
         cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
@@ -922,19 +855,20 @@ adguardhome_munin_fetch_upstreams_avg() {
     else
         mv "${tmp_keys_file}" "${state_file}"
     fi
-    all_keys=$(cat "${state_file}")
-    if [ -z "${all_keys}" ]; then
+    if [ ! -s "${state_file}" ]; then
         printf "none.value 0\n"
         rm -f "${tmp_output_file}"
         return
     fi
-    for key in ${all_keys}; do
-        if grep -qxF "${key}" "${tmp_keys_file}"; then
-            grep "^${key}\.value " "${tmp_output_file}" || printf "%s.value U\n" "${key}"
-        else
-            printf "%s.value U\n" "${key}"
-        fi
-    done
+    while IFS= read -r upstream; do
+        key=$(printf "%s" "${upstream}" | tr -c 'a-zA-Z0-9' '_')
+        case "${key}" in
+            [0-9]*)
+                key="upstreams_avg_${key}"
+                ;;
+        esac
+        grep "^${key}\.value " "${tmp_output_file}" || printf "%s.value U\n" "${key}"
+    done < "${state_file}"
     rm -f "${tmp_keys_file}" "${tmp_output_file}"
 }
 
@@ -968,7 +902,7 @@ adguardhome_munin_fetch_handler() {
             adguardhome_munin_fetch_upstreams_avg
             ;;
         *)
-            printf "%s\n" "Error: Cannot fetch for unknown plugin ID '${adguardhome_munin_plugin_id}'." >&2
+            printf "%s\n" "Error: Cannot fetch for unrecognised plugin ID '${adguardhome_munin_plugin_id}'." >&2
             exit 1
             ;;
     esac
@@ -1004,7 +938,7 @@ adguardhome_munin_config_handler() {
             adguardhome_munin_config_upstreams_avg
             ;;
         *)
-            printf "%s\n" "Error: Cannot config for unknown plugin ID '${adguardhome_munin_plugin_id}'." >&2
+            printf "%s\n" "Error: Cannot config for unrecognised plugin ID '${adguardhome_munin_plugin_id}'." >&2
             exit 1
             ;;
     esac
@@ -1014,10 +948,9 @@ adguardhome_munin_config_handler() {
 }
 
 adguardhome_munin_check_dependencies() {
-    plugin_dependencies="curl jq mktemp"
+    plugin_dependencies="awk curl grep jq mktemp sed"
     for plugin_dependency in ${plugin_dependencies}; do
         if ! command -v "${plugin_dependency}" >/dev/null 2>&1; then
-            printf "%s\n" "Error: '${plugin_dependency}' is not installed or not in PATH." >&2
             return 1
         fi
     done
@@ -1031,11 +964,20 @@ adguardhome_munin_suggest() {
 }
 
 adguardhome_munin_autoconf() {
+    if [ -z "${user}" ] || [ -z "${pass}" ]; then
+        printf "no\n"
+        return
+    fi
     if ! adguardhome_munin_check_dependencies >/dev/null 2>&1; then
         printf "no\n"
         return
     fi
-    if ! command -v AdGuard Home >/dev/null 2>&1 && [ ! -x "/opt/AdGuardHome/AdGuardHome" ]; then
+    if ! command -v AdGuardHome >/dev/null 2>&1 || [ ! -x "/opt/AdGuardHome/AdGuardHome" ]; then
+        printf "no\n"
+        return
+    fi
+    if [ -z "${adguardhome_munin_plugin_id}" ]; then
+        # This should never happen
         printf "no\n"
         return
     fi
