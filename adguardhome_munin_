@@ -61,6 +61,7 @@ graph_category="${graph_category:-"dns"}"
 graph_draw="${graph_draw:-"LINE1"}"
 graph_height="${graph_height:-"200"}"
 graph_scale="${graph_scale:-"no"}"
+[ "${graph_total:-total}" != "undef" ] && graph_total_line="graph_total ${graph_total:-total}"
 graph_type="${graph_type:-"GAUGE"}"
 graph_width="${graph_width:-"400"}"
 
@@ -69,32 +70,61 @@ state_file="${state_dir}/${adguardhome_munin_plugin_id}.state"
 
 mkdir -p "${state_dir}"
 
-cookie_file=$(mktemp "${state_dir}/cookie_file.XXXXXX" 2>/dev/null || mktemp -t cookie_file.XXXXXX)
+adguardhome_munin_mktemp() {
+    # Create a temporary file in a specified directory with a given prefix.
+    # Arguments:
+    #   ${1} = directory (optional, defaults to /tmp if not provided)
+    #   ${2} = filename prefix (required, defaults to "adguardhome_munin_" if not provided)
+    # Returns:
+    #   Path to the created temporary file.
+    # Notes:
+    #   Uses mktemp to ensure unique filenames.
+    #   Falls back to mktemp -t if the directory argument is not supported.
+    dir="${1:-/tmp}"
+    prefix="${2:-adguardhome_munin_}"
+    mktemp "${dir}/${prefix}.XXXXXX" 2>/dev/null || mktemp -t "${prefix}.XXXXXX"
+}
 
+# Create a temporary cookie file for storing session cookies
+cookie_file=$(adguardhome_munin_mktemp "${state_dir}" "cookie_file")
+
+# Ensure the cookie file is removed on exit
 trap 'rm -f "${cookie_file}"' EXIT
 
 adguardhome_munin_print() {
-    #  ${1} = key
-    #  ${2} = colour
-    #  ${3} = critical
-    #  ${4} = draw
-    #  ${5} = graph
-    #  ${6} = info
-    #  ${7} = label
-    #  ${8} = max
-    #  ${9} = min
-    # ${10} = type
-    # ${11} = warning
+    # Print a Munin field definition for a given key and its attributes.
+    # Arguments:
+    #  ${1} = key (sanitized, must match Munin field requirements)
+    #  ${2} = colour (hex RGB, optional)
+    #  ${3} = critical (threshold value, optional)
+    #  ${4} = draw (graph style, e.g. LINE1, AREA, etc., optional)
+    #  ${5} = graph (yes/no, whether to graph this field)
+    #  ${6} = info (description for this field)
+    #  ${7} = label (human-readable label, will be sanitized below)
+    #  ${8} = max (maximum value, optional)
+    #  ${9} = min (minimum value, optional)
+    # ${10} = type (GAUGE, COUNTER, etc., optional)
+    # ${11} = warning (threshold value, optional)
+    # Validate key format: must start with a letter or underscore, followed by alphanumerics/underscores
     if ! printf %s "${1}" | grep -Eq '^[a-zA-Z_][a-zA-Z0-9_]*$'; then
         printf "%s\n" "Error: Invalid or missing key." >&2
         exit 1
     fi
-    if [ -z "${7}" ] || printf %s "${7}" | grep -q '[#\\]'; then
+    # Sanitize label: remove backslash escape sequences and hash characters
+    label_clean="$(printf "%s" "${7}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#')"
+    # Truncate label if longer than 19 characters for Munin compatibility
+    if [ "${#label_clean}" -gt 19 ]; then
+        label_clean="$(printf "%s" "${label_clean}" | cut -c1-16)..."
+    fi
+    # Validate sanitized label
+    if [ -z "${label_clean}" ]; then
         printf "%s\n" "Error: Invalid or missing label." >&2
         exit 1
     fi
+    # Output colour if provided and valid (Munin expects 6-digit hex)
     if [ -n "${2}" ] && [ -n "$(printf '%s' "${2}" | tr -d '[:space:]')" ]; then
-        colour_val="${2#\#}"
+        colour_val="${2#\#}" # Remove leading hash if present
+        # Expand 3-digit hex to 6-digit hex
         if printf %s "${colour_val}" | grep -Eq '^[0-9A-Fa-f]{3}$'; then
             r=$(printf %s "${colour_val}" | cut -c1)
             g=$(printf %s "${colour_val}" | cut -c2)
@@ -105,16 +135,19 @@ adguardhome_munin_print() {
             printf "%s.colour %s\n" "${1}" "${colour_val}"
         fi
     fi
+    # Output critical threshold if provided and valid
     if [ -n "${3}" ] && [ -n "$(printf '%s' "${3}" | tr -d '[:space:]')" ]; then
         if printf %s "${3}" | grep -Eq '^(-?[0-9]+(\.[0-9]*)?)?(:(-?[0-9]+(\.[0-9]*)?)?)?$|^(-?[0-9]+(\.[0-9]*)?):$'; then
             printf "%s.critical %s\n" "${1}" "${3}"
         fi
     fi
+    # Output draw style if provided and valid
     if [ -n "${4}" ] && [ -n "$(printf '%s' "${4}" | tr -d '[:space:]')" ]; then
         if printf %s "${4}" | grep -Eq '^LINE[0-9]*$|^AREA$|^STACK$|^AREASTACK$|^LINESTACK[0-9]*$'; then
             printf "%s.draw %s\n" "${1}" "${4}"
         fi
     fi
+    # Output graph flag if provided and valid
     if [ -n "${5}" ] && [ -n "$(printf '%s' "${5}" | tr -d '[:space:]')" ]; then
         case "${5}" in
             "yes"|"no")
@@ -122,20 +155,25 @@ adguardhome_munin_print() {
             ;;
         esac
     fi
+    # Output info string if provided
     if [ -n "${6}" ] && [ -n "$(printf '%s' "${6}" | tr -d '[:space:]')" ]; then
         printf "%s.info %s\n" "${1}" "${6}"
     fi
-    printf "%s.label %s\n" "${1}" "${7}"
+    # Output sanitized label
+    printf "%s.label %s\n" "${1}" "${label_clean}"
+    # Output max value if provided and valid
     if [ -n "${8}" ] && [ -n "$(printf '%s' "${8}" | tr -d '[:space:]')" ]; then
         if printf %s "${8}" | grep -Eq '^(-?[0-9]+(\.[0-9]*)?)$'; then
             printf "%s.max %s\n" "${1}" "${8}"
         fi
     fi
+    # Output min value if provided and valid
     if [ -n "${9}" ] && [ -n "$(printf '%s' "${9}" | tr -d '[:space:]')" ]; then
         if printf %s "${9}" | grep -Eq '^(-?[0-9]+(\.[0-9]*)?)$'; then
             printf "%s.min %s\n" "${1}" "${9}"
         fi
     fi
+    # Output type if provided and valid (Munin expects GAUGE, COUNTER, DERIVE, ABSOLUTE)
     if [ -n "${10}" ] && [ -n "$(printf '%s' "${10}" | tr -d '[:space:]')" ]; then
         case "${10}" in
             "GAUGE"|"COUNTER"|"DERIVE"|"ABSOLUTE")
@@ -143,6 +181,7 @@ adguardhome_munin_print() {
             ;;
         esac
     fi
+    # Output warning threshold if provided and valid
     if [ -n "${11}" ] && [ -n "$(printf '%s' "${11}" | tr -d '[:space:]')" ]; then
         if printf %s "${11}" | grep -Eq '^(-?[0-9]+(\.[0-9]*)?)?(:(-?[0-9]+(\.[0-9]*)?)?)?$|^(-?[0-9]+(\.[0-9]*)?):$'; then
             printf "%s.warning %s\n" "${1}" "${11}"
@@ -151,8 +190,10 @@ adguardhome_munin_print() {
 }
 
 adguardhome_munin_print_from_state() {
-    #  ${1} = state_file
-    #  ${2} = plugin_type (domain, client, upstream, etc)
+    # Print Munin field definitions for all keys in a state file.
+    # Arguments:
+    #  ${1} = state_file (file containing raw keys, one per line)
+    #  ${2} = plugin_type (prefix for keys starting with a digit)
     #  ${3} = colour
     #  ${4} = critical
     #  ${5} = draw
@@ -162,21 +203,30 @@ adguardhome_munin_print_from_state() {
     #  ${9} = min
     # ${10} = type
     # ${11} = warning
-    # ${12} = none_info
-    # ${13} = none_label
+    # ${12} = none_info (info string for "none" key if state file is empty)
+    # ${13} = none_label (label for "none" key if state file is empty)
     if [ -s "${1}" ]; then
+        # State file exists and is not empty
         while IFS= read -r raw; do
-            key=$(printf "%s" "${raw}" | tr -c 'a-zA-Z0-9' '_')
+            # Sanitize key: remove backslash escape sequences and hash, then replace non-alphanum with _
+            key="$(printf "%s" "${raw}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
             case "${key}" in
                 [0-9]*)
+                    # Prefix keys which wouldn't otherwise be legal (Munin keys must not start with a digit)
                     key="${2}_${key}"
                     ;;
             esac
-            if [ "${#raw}" -gt 19 ]; then
-                label="$(printf "%s" "${raw}" | cut -c1-16)..."
-            else
-                label="${raw}"
+            # Sanitize label: remove backslash escape sequences and hash
+            label="$(printf "%s" "${raw}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#')"
+            # Truncate label if longer than 19 characters
+            if [ "${#label}" -gt 19 ]; then
+                label="$(printf "%s" "${label}" | cut -c1-16)..."
             fi
+            # Use "invalid" if label is empty after sanitization
+            if [ -z "${label}" ]; then
+                label="invalid"
+            fi
+            # Print Munin field definition for this key
             adguardhome_munin_print \
                 "${key}" \
                 "${3}" \
@@ -191,6 +241,7 @@ adguardhome_munin_print_from_state() {
                 "${11}"
         done < "${1}"
     else
+        # State file is empty or missing, print a "none" key as placeholder
         adguardhome_munin_print \
             "none" \
             "${3}" \
@@ -207,26 +258,36 @@ adguardhome_munin_print_from_state() {
 }
 
 adguardhome_munin_auth() {
+    # Authenticate with AdGuard Home API and store session cookie.
+    # Sends a POST request with username and password to the login endpoint.
+    # Stores cookies in ${cookie_file} for subsequent requests.
+    # Returns 0 on success, 1 on failure.
     response=$(curl --connect-timeout 5 -k -s -L \
         -H "Content-Type: application/json" \
         -c "${cookie_file}" \
         -d "{\"name\":\"${user}\",\"password\":\"${pass}\"}" \
         -w "\n%{http_code}" \
         "${api}/control/login")
+    # Extract HTTP status code from response
     http_code=$(printf "%s" "${response}" | tail -n1)
     case "${http_code}" in
         "200")
+            # Login successful
             return 0
             ;;
         "400")
+            # Invalid credentials
             printf "Error: Invalid username/password..\n" >&2
             return 1
             ;;
         "429")
+            # Too many login attempts
             printf "Error: Out of login attempts.\n" >&2
             return 1
             ;;
         *)
+            # Any other response code
+            # This could indicate an API error or misconfiguration
             printf "Error: Unexpected HTTP response from AdGuard Home API (login): %s\n" "${http_code}" >&2
             return 1
             ;;
@@ -234,18 +295,25 @@ adguardhome_munin_auth() {
 }
 
 adguardhome_munin_logout() {
+    # Log out from AdGuard Home API and clean up session cookie.
+    # Sends a GET request to the logout endpoint using the stored cookie.
+    # Removes the cookie file after logout.
+    # Returns 0 on success, 1 on failure.
     response=$(curl --connect-timeout 5 -k -s -L \
         -H "Content-Type: application/json" \
         -b "${cookie_file}" \
         -w "\n%{http_code}" \
         "${api}/control/logout")
+    # Extract HTTP status code from response
     http_code=$(printf "%s" "${response}" | tail -n1)
     rm -f "${cookie_file}"
     case "${http_code}" in
         "200")
+            # Logout successful
             return 0
             ;;
         *)
+            # Any other error
             printf "%s\n" "Error: Unexpected HTTP response from AdGuard Home API (logout): ${http_code}" >&2
             return 1
             ;;
@@ -253,22 +321,17 @@ adguardhome_munin_logout() {
 }
 
 adguardhome_munin_config_blocked() {
-    printf "%s\n" \
-        "graph ${graph}" \
-        "graph_args ${graph_args}" \
-        "graph_category ${graph_category}" \
-        "graph_height ${graph_height}" \
-        "graph_info This graph shows the top ${top_n} AdGuard Home blocked domains" \
-        "graph_scale ${graph_scale}" \
-        "graph_title AdGuard Home top ${top_n} blocked domains" \
-        "graph_vlabel queries" \
-        "graph_width ${graph_width}"
+    # Output Munin graph configuration for the "blocked" plugin.
+    # This sets up the graph's appearance and labels.
+    # Query AdGuard Home API for blocked domain stats.
     blocked_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
-    tmp_keys_file=$(mktemp "${state_dir}/blocked_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "blocked_keys_tmp.XXXXXX")
+    # Extract the top blocked domains and write them to a temporary file.
+    tmp_keys_file=$(adguardhome_munin_mktemp "${state_dir}" "blocked_keys_tmp")
     printf "%s\n" "${blocked_response}" | jq -r ".top_blocked_domains[:${top_n}][] | to_entries[] | \"\(.key)\"" | \
     while read -r blocked_domain; do
-        printf "%s\n" "${blocked_domain}" >> "${tmp_keys_file}"
+        [ -n "${blocked_domain}" ] && printf "%s\n" "${blocked_domain}" >> "${tmp_keys_file}"   # Only write non-empty keys
     done
+    # Merge new keys into the persistent state file, ensuring uniqueness.
     if [ -s "${tmp_keys_file}" ]; then
         if [ -f "${state_file}" ]; then
             cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
@@ -278,6 +341,24 @@ adguardhome_munin_config_blocked() {
         fi
     fi
     rm -f "${tmp_keys_file}"
+    # Only print graph_total_line if the state file is non-empty
+    if [ -s "${state_file}" ]; then
+        print_total_line="${graph_total_line}"
+    else
+        print_total_line=""
+    fi
+    printf "%s\n" \
+        "graph ${graph}" \
+        "graph_args ${graph_args}" \
+        "graph_category ${graph_category}" \
+        "graph_height ${graph_height}" \
+        "graph_info This graph shows the top ${top_n} AdGuard Home blocked domains" \
+        "graph_scale ${graph_scale}" \
+        "graph_title AdGuard Home top ${top_n} blocked domains" \
+        "${print_total_line}" \
+        "graph_vlabel queries" \
+        "graph_width ${graph_width}"
+    # Print Munin field definitions for all keys in the state file.
     adguardhome_munin_print_from_state \
         "${state_file}" \
         "blocked" \
@@ -286,7 +367,6 @@ adguardhome_munin_config_blocked() {
         "${graph_draw}" \
         "yes" \
         "AdGuard Home blocked domains" \
-        "blocked" \
         "" \
         "0" \
         "${graph_type}" \
@@ -296,13 +376,18 @@ adguardhome_munin_config_blocked() {
 }
 
 adguardhome_munin_fetch_blocked() {
+    # Fetch current values for the "blocked" plugin.
+    # Queries AdGuard Home API for blocked domain stats.
     blocked_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
-    tmp_keys_file=$(mktemp "${state_dir}/blocked_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "blocked_keys_tmp.XXXXXX")
-    tmp_output_file=$(mktemp "${state_dir}/blocked_output_tmp.XXXXXX" 2>/dev/null || mktemp -t "blocked_output_tmp.XXXXXX")
+    # Prepare temporary files for keys and output values.
+    tmp_keys_file=$(adguardhome_munin_mktemp "${state_dir}" "blocked_keys_tmp")
+    tmp_output_file=$(adguardhome_munin_mktemp "${state_dir}" "blocked_output_tmp")
+    # Extract domain and count pairs, sanitize keys, and write to output file.
     printf "%s\n" "${blocked_response}" | jq -r ".top_blocked_domains[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
     while read -r blocked_domain num_blocked; do
         printf "%s\n" "${blocked_domain}" >> "${tmp_keys_file}"
-        key=$(printf "%s" "${blocked_domain}" | tr -c 'a-zA-Z0-9' '_')
+        # Sanitize key for Munin compatibility.
+        key="$(printf "%s" "${blocked_domain}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
         case "${key}" in
             [0-9]*)
                 key="blocked_${key}"
@@ -310,19 +395,22 @@ adguardhome_munin_fetch_blocked() {
         esac
         printf "%s.value %s\n" "${key}" "${num_blocked}" >> "${tmp_output_file}"
     done
+    # Merge new keys into the persistent state file, ensuring uniqueness.
     if [ -f "${state_file}" ]; then
         cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
         mv "${tmp_keys_file}.merged" "${state_file}"
     else
         mv "${tmp_keys_file}" "${state_file}"
     fi
+    # If no keys, output a placeholder and clean up.
     if [ ! -s "${state_file}" ]; then
         printf "none.value 0\n"
         rm -f "${tmp_output_file}"
         return
     fi
+    # For each key in the state file, print its value or "U" if missing.
     while IFS= read -r blocked_domain; do
-        key=$(printf "%s" "${blocked_domain}" | tr -c 'a-zA-Z0-9' '_')
+        key="$(printf "%s" "${blocked_domain}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
         case "${key}" in
             [0-9]*)
                 key="blocked_${key}"
@@ -330,26 +418,22 @@ adguardhome_munin_fetch_blocked() {
         esac
         grep "^${key}\.value " "${tmp_output_file}" || printf "%s.value U\n" "${key}"
     done < "${state_file}"
+    # Clean up temporary files.
     rm -f "${tmp_keys_file}" "${tmp_output_file}"
 }
 
 adguardhome_munin_config_clients() {
-    printf "%s\n" \
-        "graph ${graph}" \
-        "graph_args ${graph_args}" \
-        "graph_category ${graph_category}" \
-        "graph_height ${graph_height}" \
-        "graph_info This graph shows the top ${top_n} AdGuard Home clients" \
-        "graph_scale ${graph_scale}" \
-        "graph_title AdGuard Home top ${top_n} clients" \
-        "graph_vlabel queries" \
-        "graph_width ${graph_width}"
+    # Output Munin graph configuration for the "clients" plugin.
+    # This sets up the graph's appearance and labels for top clients.
+    # Query AdGuard Home API for client stats.
     clients_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
-    tmp_keys_file=$(mktemp "${state_dir}/clients_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "clients_keys_tmp.XXXXXX")
+    # Extract the top clients and write them to a temporary file.
+    tmp_keys_file=$(adguardhome_munin_mktemp "${state_dir}" "clients_keys_tmp")
     printf "%s\n" "${clients_response}" | jq -r ".top_clients[:${top_n}][] | to_entries[] | \"\(.key)\"" | \
     while read -r client; do
-        printf "%s\n" "${client}" >> "${tmp_keys_file}"
+        [ -n "${client}" ] && printf "%s\n" "${client}" >> "${tmp_keys_file}"   # Only write non-empty keys
     done
+    # Merge new keys into the persistent state file, ensuring uniqueness.
     if [ -s "${tmp_keys_file}" ]; then
         if [ -f "${state_file}" ]; then
             cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
@@ -359,6 +443,24 @@ adguardhome_munin_config_clients() {
         fi
     fi
     rm -f "${tmp_keys_file}"
+    # Only print graph_total_line if the state file is non-empty
+    if [ -s "${state_file}" ]; then
+        print_total_line="${graph_total_line}"
+    else
+        print_total_line=""
+    fi
+    printf "%s\n" \
+        "graph ${graph}" \
+        "graph_args ${graph_args}" \
+        "graph_category ${graph_category}" \
+        "graph_height ${graph_height}" \
+        "graph_info This graph shows the top ${top_n} AdGuard Home clients" \
+        "graph_scale ${graph_scale}" \
+        "graph_title AdGuard Home top ${top_n} clients" \
+        "${print_total_line}" \
+        "graph_vlabel queries" \
+        "graph_width ${graph_width}"
+    # Print Munin field definitions for all keys in the state file.
     adguardhome_munin_print_from_state \
         "${state_file}" \
         "client" \
@@ -376,13 +478,18 @@ adguardhome_munin_config_clients() {
 }
 
 adguardhome_munin_fetch_clients() {
+    # Fetch current values for the "clients" plugin.
+    # Queries AdGuard Home API for client stats.
     clients_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
-    tmp_keys_file=$(mktemp "${state_dir}/clients_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "clients_keys_tmp.XXXXXX")
-    tmp_output_file=$(mktemp "${state_dir}/clients_output_tmp.XXXXXX" 2>/dev/null || mktemp -t "clients_output_tmp.XXXXXX")
+    # Prepare temporary files for keys and output values.
+    tmp_keys_file=$(adguardhome_munin_mktemp "${state_dir}" "clients_keys_tmp")
+    tmp_output_file=$(adguardhome_munin_mktemp "${state_dir}" "clients_output_tmp")
+    # Extract client and count pairs, sanitize keys, and write to output file.
     printf "%s\n" "${clients_response}" | jq -r ".top_clients[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
     while read -r client num_queries; do
         printf "%s\n" "${client}" >> "${tmp_keys_file}"
-        key=$(printf "%s" "${client}" | tr -c 'a-zA-Z0-9' '_')
+        # Sanitize key for Munin compatibility.
+        key="$(printf "%s" "${client}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
         case "${key}" in
             [0-9]*)
                 key="client_${key}"
@@ -390,19 +497,22 @@ adguardhome_munin_fetch_clients() {
         esac
         printf "%s.value %s\n" "${key}" "${num_queries}" >> "${tmp_output_file}"
     done
+    # Merge new keys into the persistent state file, ensuring uniqueness.
     if [ -f "${state_file}" ]; then
         cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
         mv "${tmp_keys_file}.merged" "${state_file}"
     else
         mv "${tmp_keys_file}" "${state_file}"
     fi
+    # If no keys, output a placeholder and clean up.
     if [ ! -s "${state_file}" ]; then
         printf "none.value 0\n"
         rm -f "${tmp_output_file}"
         return
     fi
+    # For each key in the state file, print its value or "U" if missing.
     while IFS= read -r client; do
-        key=$(printf "%s" "${client}" | tr -c 'a-zA-Z0-9' '_')
+        key="$(printf "%s" "${client}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
         case "${key}" in
             [0-9]*)
                 key="client_${key}"
@@ -410,26 +520,22 @@ adguardhome_munin_fetch_clients() {
         esac
         grep "^${key}\.value " "${tmp_output_file}" || printf "%s.value U\n" "${key}"
     done < "${state_file}"
+    # Clean up temporary files.
     rm -f "${tmp_keys_file}" "${tmp_output_file}"
 }
 
 adguardhome_munin_config_domains() {
-    printf "%s\n" \
-        "graph ${graph}" \
-        "graph_args ${graph_args}" \
-        "graph_category ${graph_category}" \
-        "graph_height ${graph_height}" \
-        "graph_info This graph shows the top ${top_n} AdGuard Home domains" \
-        "graph_scale ${graph_scale}" \
-        "graph_title AdGuard Home top ${top_n} domains" \
-        "graph_vlabel queries" \
-        "graph_width ${graph_width}"
+    # Output Munin graph configuration for the "domains" plugin.
+    # This sets up the graph's appearance and labels for top domains.
+    # Query AdGuard Home API for domain stats.
     domains_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
-    tmp_keys_file=$(mktemp "${state_dir}/domains_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "domains_keys_tmp.XXXXXX")
+    # Extract the top domains and write them to a temporary file.
+    tmp_keys_file=$(adguardhome_munin_mktemp "${state_dir}" "domains_keys_tmp")
     printf "%s\n" "${domains_response}" | jq -r ".top_queried_domains[:${top_n}][] | to_entries[] | \"\(.key)\"" | \
     while read -r domain; do
-        printf "%s\n" "${domain}" >> "${tmp_keys_file}"
+        [ -n "${domain}" ] && printf "%s\n" "${domain}" >> "${tmp_keys_file}"   # Only write non-empty keys
     done
+    # Merge new keys into the persistent state file, ensuring uniqueness.
     if [ -s "${tmp_keys_file}" ]; then
         if [ -f "${state_file}" ]; then
             cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
@@ -439,6 +545,24 @@ adguardhome_munin_config_domains() {
         fi
     fi
     rm -f "${tmp_keys_file}"
+    # Only print graph_total_line if the state file is non-empty
+    if [ -s "${state_file}" ]; then
+        print_total_line="${graph_total_line}"
+    else
+        print_total_line=""
+    fi
+    printf "%s\n" \
+        "graph ${graph}" \
+        "graph_args ${graph_args}" \
+        "graph_category ${graph_category}" \
+        "graph_height ${graph_height}" \
+        "graph_info This graph shows the top ${top_n} AdGuard Home domains" \
+        "graph_scale ${graph_scale}" \
+        "graph_title AdGuard Home top ${top_n} domains" \
+        "${print_total_line}" \
+        "graph_vlabel queries" \
+        "graph_width ${graph_width}"
+    # Print Munin field definitions for all keys in the state file.
     adguardhome_munin_print_from_state \
         "${state_file}" \
         "domain" \
@@ -456,13 +580,18 @@ adguardhome_munin_config_domains() {
 }
 
 adguardhome_munin_fetch_domains() {
+    # Fetch current values for the "domains" plugin.
+    # Queries AdGuard Home API for domain stats.
     domains_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
-    tmp_keys_file=$(mktemp "${state_dir}/domains_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "domains_keys_tmp.XXXXXX")
-    tmp_output_file=$(mktemp "${state_dir}/domains_output_tmp.XXXXXX" 2>/dev/null || mktemp -t "domains_output_tmp.XXXXXX")
+    # Prepare temporary files for keys and output values.
+    tmp_keys_file=$(adguardhome_munin_mktemp "${state_dir}" "domains_keys_tmp")
+    tmp_output_file=$(adguardhome_munin_mktemp "${state_dir}" "domains_output_tmp")
+    # Extract domain and count pairs, sanitize keys, and write to output file.
     printf "%s\n" "${domains_response}" | jq -r ".top_queried_domains[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
     while read -r domain num_queries; do
         printf "%s\n" "${domain}" >> "${tmp_keys_file}"
-        key=$(printf "%s" "${domain}" | tr -c 'a-zA-Z0-9' '_')
+        # Sanitize key for Munin compatibility.
+        key="$(printf "%s" "${domain}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
         case "${key}" in
             [0-9]*)
                 key="domain_${key}"
@@ -470,19 +599,22 @@ adguardhome_munin_fetch_domains() {
         esac
         printf "%s.value %s\n" "${key}" "${num_queries}" >> "${tmp_output_file}"
     done
+    # Merge new keys into the persistent state file, ensuring uniqueness.
     if [ -f "${state_file}" ]; then
         cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
         mv "${tmp_keys_file}.merged" "${state_file}"
     else
         mv "${tmp_keys_file}" "${state_file}"
     fi
+    # If no keys, output a placeholder and clean up.
     if [ ! -s "${state_file}" ]; then
         printf "none.value 0\n"
         rm -f "${tmp_output_file}"
         return
     fi
+    # For each key in the state file, print its value or "U" if missing.
     while IFS= read -r domain; do
-        key=$(printf "%s" "${domain}" | tr -c 'a-zA-Z0-9' '_')
+        key="$(printf "%s" "${domain}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
         case "${key}" in
             [0-9]*)
                 key="domain_${key}"
@@ -490,10 +622,13 @@ adguardhome_munin_fetch_domains() {
         esac
         grep "^${key}\.value " "${tmp_output_file}" || printf "%s.value U\n" "${key}"
     done < "${state_file}"
+    # Clean up temporary files.
     rm -f "${tmp_keys_file}" "${tmp_output_file}"
 }
 
 adguardhome_munin_config_percent() {
+    # Output Munin graph configuration for the "percent" plugin.
+    # This sets up the graph's appearance for blocked query percentage.
     printf "%s\n" \
         "graph ${graph}" \
         "graph_args --upper-limit 100 --lower-limit 0" \
@@ -504,6 +639,7 @@ adguardhome_munin_config_percent() {
         "graph_title AdGuard Home percent blocked" \
         "graph_vlabel percent blocked" \
         "graph_width ${graph_width}"
+    # Print Munin field definition for percent blocked.
     adguardhome_munin_print \
         "percent_blocked" \
         "" \
@@ -519,8 +655,11 @@ adguardhome_munin_config_percent() {
 }
 
 adguardhome_munin_fetch_percent() {
+    # Fetch current value for the "percent" plugin.
+    # Queries AdGuard Home API for DNS query and blocked stats.
     percent_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
     if [ -z "${percent_response}" ]; then
+        # Output unknown value if API response is empty.
         printf "percent_blocked.value U\n"
         return
     fi
@@ -529,12 +668,15 @@ adguardhome_munin_fetch_percent() {
     if [ -z "${num_dns_queries}" ] || [ "${num_dns_queries}" -eq "0" ]; then
         percent_blocked="0"
     else
+        # Calculate percentage of blocked queries.
         percent_blocked=$(awk "BEGIN { printf \"%.2f\", (${num_blocked_filtering}/${num_dns_queries})*100 }")
     fi
     printf "percent_blocked.value %s\n" "${percent_blocked}"
 }
 
 adguardhome_munin_config_processing() {
+    # Output Munin graph configuration for the "processing" plugin.
+    # This sets up the graph's appearance for average DNS processing time.
     printf "%s\n" \
         "graph ${graph}" \
         "graph_args ${graph_args}" \
@@ -545,6 +687,7 @@ adguardhome_munin_config_processing() {
         "graph_title AdGuard Home average processing time" \
         "graph_vlabel seconds" \
         "graph_width ${graph_width}"
+    # Print Munin field definition for average processing time.
     adguardhome_munin_print \
         "avg_processing_time" \
         "" \
@@ -560,11 +703,14 @@ adguardhome_munin_config_processing() {
 }
 
 adguardhome_munin_fetch_processing() {
+    # Fetch current value for the "processing" plugin.
+    # Queries AdGuard Home API for average DNS processing time.
     avg_processing_time=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats" \
         | jq -r '.avg_processing_time' \
         | awk -F. '{ printf "%d.%s\n", $1, substr($2 "000", 1, 3) }' \
         | sed 's/\.0*$//;s/\(\.[0-9]*[1-9]\)0*$/\1/')
     if [ -z "${avg_processing_time}" ]; then
+        # Output unknown value if API response is empty.
         printf "avg_processing_time.value U\n"
         return
     fi
@@ -572,6 +718,8 @@ adguardhome_munin_fetch_processing() {
 }
 
 adguardhome_munin_config_queries() {
+    # Output Munin graph configuration for the "queries" plugin.
+    # This sets up the graph's appearance and labels for DNS query statistics.
     printf "%s\n" \
         "graph ${graph}" \
         "graph_args ${graph_args}" \
@@ -582,6 +730,7 @@ adguardhome_munin_config_queries() {
         "graph_title AdGuard Home queries" \
         "graph_vlabel queries" \
         "graph_width ${graph_width}"
+    # Print Munin field definitions for each query statistic.
     adguardhome_munin_print \
         "num_dns_queries" \
         "" \
@@ -645,8 +794,11 @@ adguardhome_munin_config_queries() {
 }
 
 adguardhome_munin_fetch_queries() {
+    # Fetch current values for the "queries" plugin.
+    # Queries AdGuard Home API for DNS query statistics.
     queries_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
     if [ -z "${queries_response}" ]; then
+        # Output unknown values if API response is empty.
         printf "num_dns_queries.value U\n"
         printf "num_blocked_filtering.value U\n"
         printf "num_replaced_safebrowsing.value U\n"
@@ -654,11 +806,13 @@ adguardhome_munin_fetch_queries() {
         printf "num_replaced_safesearch.value U\n"
         return
     fi
+    # Extract each statistic from the API response.
     num_dns_queries=$(printf "%s" "${queries_response}" | jq -r '.num_dns_queries')
     num_blocked_filtering=$(printf "%s" "${queries_response}" | jq -r '.num_blocked_filtering')
     num_replaced_safebrowsing=$(printf "%s" "${queries_response}" | jq -r '.num_replaced_safebrowsing')
     num_replaced_parental=$(printf "%s" "${queries_response}" | jq -r '.num_replaced_parental')
     num_replaced_safesearch=$(printf "%s" "${queries_response}" | jq -r '.num_replaced_safesearch')
+    # Output values for Munin (default to 0 if missing).
     printf "num_dns_queries.value %s\n" "${num_dns_queries:-0}"
     printf "num_blocked_filtering.value %s\n" "${num_blocked_filtering:-0}"
     printf "num_replaced_safebrowsing.value %s\n" "${num_replaced_safebrowsing:-0}"
@@ -667,6 +821,8 @@ adguardhome_munin_fetch_queries() {
 }
 
 adguardhome_munin_config_status() {
+    # Output Munin graph configuration for the "status" plugin.
+    # This sets up the graph's appearance for protection status.
     printf "%s\n" \
         "graph ${graph}" \
         "graph_args --lower-limit -1 --upper-limit 1" \
@@ -677,6 +833,7 @@ adguardhome_munin_config_status() {
         "graph_title AdGuard Home status" \
         "graph_vlabel unknown / disabled / enabled" \
         "graph_width ${graph_width}"
+    # Print Munin field definition for protection status.
     adguardhome_munin_print \
         "protection_status" \
         "" \
@@ -693,39 +850,40 @@ adguardhome_munin_config_status() {
 }
 
 adguardhome_munin_fetch_status() {
+    # Fetch current value for the "status" plugin.
+    # Queries AdGuard Home API for protection status.
     status_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/status")
     protection_enabled=$(printf "%s" "${status_response}" | jq -r '.protection_enabled')
     case "${protection_enabled}" in
         "true")
+            # Protection is enabled
             status_value="1"
             ;;
         "false")
+            # Protection is disabled
             status_value="0"
             ;;
         *)
+            # Some fuck shit
             status_value="-1"
             ;;
     esac
+    # Output value for Munin (1 = enabled, 0 = disabled, -1 = unknown).
     printf "protection_status.value %s\n" "${status_value}"
 }
 
 adguardhome_munin_config_upstreams() {
-    printf "%s\n" \
-        "graph ${graph}" \
-        "graph_args ${graph_args}" \
-        "graph_category ${graph_category}" \
-        "graph_height ${graph_height}" \
-        "graph_info This graph shows the top ${top_n} AdGuard Home upstreams" \
-        "graph_scale ${graph_scale}" \
-        "graph_title AdGuard Home top ${top_n} upstreams" \
-        "graph_vlabel queries" \
-        "graph_width ${graph_width}"
+    # Output Munin graph configuration for the "upstreams" plugin.
+    # This sets up the graph's appearance and labels for top upstreams by query count.
+    # Query AdGuard Home API for upstream stats.
     upstreams_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
-    tmp_keys_file=$(mktemp "${state_dir}/upstreams_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "upstreams_keys_tmp.XXXXXX")
+    # Extract the top upstreams and write them to a temporary file.
+    tmp_keys_file=$(adguardhome_munin_mktemp "${state_dir}" "upstreams_keys_tmp")
     printf "%s\n" "${upstreams_response}" | jq -r ".top_upstreams_responses[:${top_n}][] | to_entries[] | \"\(.key)\"" | \
     while read -r upstream; do
-        printf "%s\n" "${upstream}" >> "${tmp_keys_file}"
+        [ -n "${upstream}" ] && printf "%s\n" "${upstream}" >> "${tmp_keys_file}"   # Only write non-empty keys
     done
+    # Merge new keys into the persistent state file, ensuring uniqueness.
     if [ -s "${tmp_keys_file}" ]; then
         if [ -f "${state_file}" ]; then
             cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
@@ -735,6 +893,24 @@ adguardhome_munin_config_upstreams() {
         fi
     fi
     rm -f "${tmp_keys_file}"
+    # Only print graph_total_line if the state file is non-empty
+    if [ -s "${state_file}" ]; then
+        print_total_line="${graph_total_line}"
+    else
+        print_total_line=""
+    fi
+    printf "%s\n" \
+        "graph ${graph}" \
+        "graph_args ${graph_args}" \
+        "graph_category ${graph_category}" \
+        "graph_height ${graph_height}" \
+        "graph_info This graph shows the top ${top_n} AdGuard Home upstreams" \
+        "graph_scale ${graph_scale}" \
+        "graph_title AdGuard Home top ${top_n} upstreams" \
+        "${print_total_line}" \
+        "graph_vlabel queries" \
+        "graph_width ${graph_width}"
+    # Print Munin field definitions for all keys in the state file.
     adguardhome_munin_print_from_state \
         "${state_file}" \
         "upstreams" \
@@ -743,7 +919,6 @@ adguardhome_munin_config_upstreams() {
         "${graph_draw}" \
         "yes" \
         "AdGuard Home upstreams" \
-        "upstreams" \
         "" \
         "0" \
         "${graph_type}" \
@@ -753,13 +928,17 @@ adguardhome_munin_config_upstreams() {
 }
 
 adguardhome_munin_fetch_upstreams() {
+    # Fetch current values for the "upstreams" plugin.
+    # Queries AdGuard Home API for upstream stats.
     upstreams_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
-    tmp_keys_file=$(mktemp "${state_dir}/upstreams_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "upstreams_keys_tmp.XXXXXX")
-    tmp_output_file=$(mktemp "${state_dir}/upstreams_output_tmp.XXXXXX" 2>/dev/null || mktemp -t "upstreams_output_tmp.XXXXXX")
+    # Prepare temporary files for keys and output values.
+    tmp_keys_file=$(adguardhome_munin_mktemp "${state_dir}" "upstreams_keys_tmp")
+    tmp_output_file=$(adguardhome_munin_mktemp "${state_dir}" "upstreams_output_tmp")
+    # Extract upstream and count pairs, sanitize keys, and write to output file.
     printf "%s\n" "${upstreams_response}" | jq -r ".top_upstreams_responses[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
     while read -r upstream num_responses; do
         printf "%s\n" "${upstream}" >> "${tmp_keys_file}"
-        key=$(printf "%s" "${upstream}" | tr -c 'a-zA-Z0-9' '_')
+        key="$(printf "%s" "${upstream}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
         case "${key}" in
             [0-9]*)
                 key="upstreams_${key}"
@@ -767,19 +946,22 @@ adguardhome_munin_fetch_upstreams() {
         esac
         printf "%s.value %s\n" "${key}" "${num_responses}" >> "${tmp_output_file}"
     done
+    # Merge new keys into the persistent state file, ensuring uniqueness.
     if [ -f "${state_file}" ]; then
         cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
         mv "${tmp_keys_file}.merged" "${state_file}"
     else
         mv "${tmp_keys_file}" "${state_file}"
     fi
+    # If no keys, output a placeholder and clean up.
     if [ ! -s "${state_file}" ]; then
         printf "none.value 0\n"
         rm -f "${tmp_output_file}"
         return
     fi
+    # For each key in the state file, print its value or "U" if missing.
     while IFS= read -r upstream; do
-        key=$(printf "%s" "${upstream}" | tr -c 'a-zA-Z0-9' '_')
+        key="$(printf "%s" "${upstream}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
         case "${key}" in
             [0-9]*)
                 key="upstreams_${key}"
@@ -787,26 +969,22 @@ adguardhome_munin_fetch_upstreams() {
         esac
         grep "^${key}\.value " "${tmp_output_file}" || printf "%s.value U\n" "${key}"
     done < "${state_file}"
+    # Clean up temporary files.
     rm -f "${tmp_keys_file}" "${tmp_output_file}"
 }
 
 adguardhome_munin_config_upstreams_avg() {
-    printf "%s\n" \
-        "graph ${graph}" \
-        "graph_args ${graph_args}" \
-        "graph_category ${graph_category}" \
-        "graph_height ${graph_height}" \
-        "graph_info This graph shows average response time for top AdGuard Home upstreams" \
-        "graph_scale ${graph_scale}" \
-        "graph_title AdGuard Home average upstream response time" \
-        "graph_vlabel seconds" \
-        "graph_width ${graph_width}"
+    # Output Munin graph configuration for the "upstreams_avg" plugin.
+    # This sets up the graph's appearance and labels for average upstream response time.
+    # Query AdGuard Home API for average upstream response times.
     upstreams_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
-    tmp_keys_file=$(mktemp "${state_dir}/upstreams_avg_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "upstreams_avg_keys_tmp.XXXXXX")
+    # Extract the top upstreams and write them to a temporary file.
+    tmp_keys_file=$(adguardhome_munin_mktemp "${state_dir}" "upstreams_avg_keys_tmp")
     printf "%s\n" "${upstreams_response}" | jq -r ".top_upstreams_avg_time[:${top_n}][] | to_entries[] | \"\(.key)\"" | \
     while read -r upstream; do
-        printf "%s\n" "${upstream}" >> "${tmp_keys_file}"
+        [ -n "${upstream}" ] && printf "%s\n" "${upstream}" >> "${tmp_keys_file}"   # Only write non-empty keys
     done
+    # Merge new keys into the persistent state file, ensuring uniqueness.
     if [ -s "${tmp_keys_file}" ]; then
         if [ -f "${state_file}" ]; then
             cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
@@ -816,6 +994,24 @@ adguardhome_munin_config_upstreams_avg() {
         fi
     fi
     rm -f "${tmp_keys_file}"
+    # Only print graph_total_line if the state file is non-empty
+    if [ -s "${state_file}" ]; then
+        print_total_line="${graph_total_line}"
+    else
+        print_total_line=""
+    fi
+    printf "%s\n" \
+        "graph ${graph}" \
+        "graph_args ${graph_args}" \
+        "graph_category ${graph_category}" \
+        "graph_height ${graph_height}" \
+        "graph_info This graph shows average response time for top AdGuard Home upstreams" \
+        "graph_scale ${graph_scale}" \
+        "graph_title AdGuard Home average upstream response time" \
+        "${print_total_line}" \
+        "graph_vlabel seconds" \
+        "graph_width ${graph_width}"
+    # Print Munin field definitions for all keys in the state file.
     adguardhome_munin_print_from_state \
         "${state_file}" \
         "upstreams_avg" \
@@ -824,7 +1020,6 @@ adguardhome_munin_config_upstreams_avg() {
         "${graph_draw}" \
         "yes" \
         "AdGuard Home upstreams average response time" \
-        "upstreams_avg" \
         "" \
         "0" \
         "${graph_type}" \
@@ -834,34 +1029,42 @@ adguardhome_munin_config_upstreams_avg() {
 }
 
 adguardhome_munin_fetch_upstreams_avg() {
+    # Fetch current values for the "upstreams_avg" plugin.
+    # Queries AdGuard Home API for average upstream response times.
     upstreams_response=$(curl --connect-timeout 5 -k -s -L -b "${cookie_file}" "${api}/control/stats")
-    tmp_keys_file=$(mktemp "${state_dir}/upstreams_avg_keys_tmp.XXXXXX" 2>/dev/null || mktemp -t "upstreams_avg_keys_tmp.XXXXXX")
-    tmp_output_file=$(mktemp "${state_dir}/upstreams_avg_output_tmp.XXXXXX" 2>/dev/null || mktemp -t "upstreams_avg_output_tmp.XXXXXX")
+    # Prepare temporary files for keys and output values.
+    tmp_keys_file=$(adguardhome_munin_mktemp "${state_dir}" "upstreams_avg_keys_tmp")
+    tmp_output_file=$(adguardhome_munin_mktemp "${state_dir}" "upstreams_avg_output_tmp")
+    # Extract upstream and average time pairs, sanitize keys, and write to output file.
     printf "%s\n" "${upstreams_response}" | jq -r ".top_upstreams_avg_time[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
     while read -r upstream avg_time; do
         printf "%s\n" "${upstream}" >> "${tmp_keys_file}"
-        key=$(printf "%s" "${upstream}" | tr -c 'a-zA-Z0-9' '_')
+        key="$(printf "%s" "${upstream}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
         case "${key}" in
             [0-9]*)
                 key="upstreams_avg_${key}"
                 ;;
         esac
+        # Format average time to three decimal places, strip trailing zeros.
         upstreams_avg_time=$(printf "%s" "${avg_time}" | awk -F. '{ printf "%d.%s\n", $1, substr($2 "000", 1, 3) }' | sed 's/\.0*$//;s/\(\.[0-9]*[1-9]\)0*$/\1/')
         printf "%s.value %s\n" "${key}" "${upstreams_avg_time}" >> "${tmp_output_file}"
     done
+    # Merge new keys into the persistent state file, ensuring uniqueness.
     if [ -f "${state_file}" ]; then
         cat "${state_file}" "${tmp_keys_file}" | sort -u > "${tmp_keys_file}.merged"
         mv "${tmp_keys_file}.merged" "${state_file}"
     else
         mv "${tmp_keys_file}" "${state_file}"
     fi
+    # If no keys, output a placeholder and clean up.
     if [ ! -s "${state_file}" ]; then
         printf "none.value 0\n"
         rm -f "${tmp_output_file}"
         return
     fi
+    # For each key in the state file, print its value or "U" if missing.
     while IFS= read -r upstream; do
-        key=$(printf "%s" "${upstream}" | tr -c 'a-zA-Z0-9' '_')
+        key="$(printf "%s" "${upstream}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
         case "${key}" in
             [0-9]*)
                 key="upstreams_avg_${key}"
@@ -869,10 +1072,13 @@ adguardhome_munin_fetch_upstreams_avg() {
         esac
         grep "^${key}\.value " "${tmp_output_file}" || printf "%s.value U\n" "${key}"
     done < "${state_file}"
+    # Clean up temporary files.
     rm -f "${tmp_keys_file}" "${tmp_output_file}"
 }
 
-adguardhome_munin_fetch_handler() {
+adguardhome_munin_fetch() {
+    # Dispatch fetch operation to the appropriate plugin-specific fetch function.
+    # Uses the plugin ID to select which data to retrieve.
     case "${adguardhome_munin_plugin_id}" in
         "blocked")
             adguardhome_munin_fetch_blocked
@@ -902,13 +1108,16 @@ adguardhome_munin_fetch_handler() {
             adguardhome_munin_fetch_upstreams_avg
             ;;
         *)
+            # Unknown plugin ID
             printf "%s\n" "Error: Cannot fetch for unrecognised plugin ID '${adguardhome_munin_plugin_id}'." >&2
             exit 1
             ;;
     esac
 }
 
-adguardhome_munin_config_handler() {
+adguardhome_munin_config() {
+    # Dispatch config operation to the appropriate plugin-specific config function.
+    # Uses the plugin ID to select which config to output.
     case "${adguardhome_munin_plugin_id}" in
         "blocked")
             adguardhome_munin_config_blocked
@@ -938,16 +1147,20 @@ adguardhome_munin_config_handler() {
             adguardhome_munin_config_upstreams_avg
             ;;
         *)
+            # Unknown plugin ID
             printf "%s\n" "Error: Cannot config for unrecognised plugin ID '${adguardhome_munin_plugin_id}'." >&2
             exit 1
             ;;
     esac
+    # If Munin requests dirtyconfig, also output current values after config
     if [ "${MUNIN_CAP_DIRTYCONFIG}" = "1" ]; then
-        adguardhome_munin_fetch_handler
+        adguardhome_munin_fetch
     fi
 }
 
 adguardhome_munin_check_dependencies() {
+    # Check for required external commands.
+    # Returns 1 if any dependency is missing, 0 otherwise.
     plugin_dependencies="awk curl grep jq mktemp sed"
     for plugin_dependency in ${plugin_dependencies}; do
         if ! command -v "${plugin_dependency}" >/dev/null 2>&1; then
@@ -957,22 +1170,28 @@ adguardhome_munin_check_dependencies() {
 }
 
 adguardhome_munin_suggest() {
+    # Output a list of supported plugin IDs for Munin's suggest mode.
     for adguardhome_munin_plugin in ${adguardhome_munin_plugins}; do
-        printf "%s\n" \
-            "${adguardhome_munin_plugin}"
+        printf "%s\n" "${adguardhome_munin_plugin}"
     done
 }
 
 adguardhome_munin_autoconf() {
+    # Munin autoconf: check if the plugin might be useful on this system.
+    # Returns "yes" if all requirements are met, "no" otherwise.
     if [ -z "${user}" ] || [ -z "${pass}" ]; then
+        # Missing credentials
         printf "no\n"
         return
     fi
     if ! adguardhome_munin_check_dependencies >/dev/null 2>&1; then
+        # Missing at least one required dependency
         printf "no\n"
         return
     fi
     if ! command -v AdGuardHome >/dev/null 2>&1 || [ ! -x "/opt/AdGuardHome/AdGuardHome" ]; then
+        # AdGuard Home binary not found or not executable
+        # Probably not an AdGuard Home host
         printf "no\n"
         return
     fi
@@ -981,31 +1200,48 @@ adguardhome_munin_autoconf() {
         printf "no\n"
         return
     fi
+    if ! adguardhome_munin_auth >/dev/null 2>&1; then
+        # Authentication failed
+        printf "no\n"
+        return
+    fi
+    # All checks passed, plugin can run
+    # Log out from AdGuard Home API
+    adguardhome_munin_logout >/dev/null 2>&1 || true  # Ignore logout errors
+    # Return "yes" to indicate plugin can run
     printf "yes\n"
 }
 
+# Authenticate with AdGuard Home API before running any plugin operation.
 adguardhome_munin_auth || {
     printf "%s\n" "Error: Authentication failed. Please check your username and password." >&2
     exit 1
 }
 
+# Main entry point: dispatch based on first argument.
 case "${1}" in
     ""|"fetch")
-        adguardhome_munin_fetch_handler
+        # Default or "fetch": output current values
+        adguardhome_munin_fetch
         ;;
     "config")
-        adguardhome_munin_config_handler
+        # "config": output Munin graph configuration
+        adguardhome_munin_config    
         ;;
     "suggest")
+        # "suggest": output supported plugin IDs
         adguardhome_munin_suggest
         ;;
     "autoconf")
+        # "autoconf": check if plugin can run
         adguardhome_munin_autoconf
         ;;
     *)
+        # Unknown argument: print usage
         printf "Usage: %s [fetch|config|suggest|autoconf]\n" "${script_path}" >&2
 esac
 
+# Log out from AdGuard Home API and clean up session cookie.
 adguardhome_munin_logout || {
     printf "%s\n" "Error: Logout failed." >&2
     exit 1
