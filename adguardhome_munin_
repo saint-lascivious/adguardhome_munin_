@@ -18,6 +18,9 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 
+#%# family=manual
+#%# capabilities=suggest
+
 set -e
 
 case "${0}" in
@@ -1205,6 +1208,14 @@ adguardhome_munin_autoconf() {
     printf "yes\n"
 }
 
+adguardhome_munin_flush_state() {
+    # Remove all dynamic plugin state files from the state directory.
+    for plugin in blocked clients domains upstreams upstreams_avg; do
+        state_file="${state_dir}/${plugin}.state"
+        [ -f "${state_file}" ] && rm -f "${state_file}"
+    done
+}
+
 # Authenticate with AdGuard Home API before running any plugin operation.
 adguardhome_munin_auth || {
     printf "%s\n" "Error: Authentication failed. Please check your username and password." >&2
@@ -1228,6 +1239,10 @@ case "${1}" in
     "autoconf")
         # "autoconf": check if plugin can run
         adguardhome_munin_autoconf
+        ;;
+    "flush")
+        # "flush": remove all dynamic state files
+        adguardhome_munin_flush_state
         ;;
     *)
         # Unknown argument: print usage
