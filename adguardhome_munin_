@@ -738,7 +738,7 @@ adguardhome_munin_config_queries() {
         "${graph_draw}" \
         "yes" \
         "AdGuard Home DNS queries" \
-        "num DNS queries" \
+        "queries" \
         "" \
         "0" \
         "${graph_type}" \
@@ -750,7 +750,7 @@ adguardhome_munin_config_queries() {
         "${graph_draw}" \
         "yes" \
         "AdGuard Home blocked filtering" \
-        "num blocked filtering" \
+        "filtering" \
         "" \
         "0" \
         "${graph_type}" \
@@ -762,7 +762,7 @@ adguardhome_munin_config_queries() {
         "${graph_draw}" \
         "yes" \
         "AdGuard Home replaced safebrowsing" \
-        "num replaced safebrowsing" \
+        "safebrowsing" \
         "" \
         "0" \
         "${graph_type}" \
@@ -774,7 +774,7 @@ adguardhome_munin_config_queries() {
         "${graph_draw}" \
         "yes" \
         "AdGuard Home replaced parental" \
-        "num replaced parental" \
+        "parental" \
         "" \
         "0" \
         "${graph_type}" \
@@ -786,7 +786,7 @@ adguardhome_munin_config_queries() {
         "${graph_draw}" \
         "yes" \
         "AdGuard Home replaced safesearch" \
-        "num replaced safesearch" \
+        "safesearch" \
         "" \
         "0" \
         "${graph_type}" \
@@ -841,7 +841,7 @@ adguardhome_munin_config_status() {
         "${graph_draw}" \
         "yes" \
         "AdGuard Home protection status" \
-        "protection status" \
+        "status" \
         "" \
         "-1" \
         "1" \
@@ -994,12 +994,6 @@ adguardhome_munin_config_upstreams_avg() {
         fi
     fi
     rm -f "${tmp_keys_file}"
-    # Only print graph_total_line if the state file is non-empty
-    if [ -s "${state_file}" ]; then
-        print_total_line="${graph_total_line}"
-    else
-        print_total_line=""
-    fi
     printf "%s\n" \
         "graph ${graph}" \
         "graph_args ${graph_args}" \
@@ -1008,7 +1002,6 @@ adguardhome_munin_config_upstreams_avg() {
         "graph_info This graph shows average response time for top AdGuard Home upstreams" \
         "graph_scale ${graph_scale}" \
         "graph_title AdGuard Home average upstream response time" \
-        "${print_total_line}" \
         "graph_vlabel seconds" \
         "graph_width ${graph_width}"
     # Print Munin field definitions for all keys in the state file.
