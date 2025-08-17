@@ -159,6 +159,101 @@ Older versions of Munin may not recognise the `fetch` command, in which case it 
 
 ---
 
+## Example Graph Gallery
+
+### blocked
+![alt text][blocked]
+
+[blocked]:https://raw.githubusercontent.com/wiki/saint-lascivious/adguardhome_munin_/images/gallery/adguardhome_munin_blocked-day.png "This graph shows the top N AdGuard Home blocked domains."
+
+This graph shows the top N AdGuard Home blocked domains.
+
+### clients
+![alt text][clients]
+
+[clients]:https://raw.githubusercontent.com/wiki/saint-lascivious/adguardhome_munin_/images/gallery/adguardhome_munin_clients-day.png "This graph shows the top N AdGuard Home clients."
+
+This graph shows the top N AdGuard Home clients.
+
+### domains
+<p align="center">
+    <a href="https://github.com/saint-lascivious/adguardhome_munin_">
+        <img src="https://raw.githubusercontent.com/wiki/saint-lascivious/adguardhome_munin_/images/gallery/adguardhome_munin_domains-day.png"
+             alt="This graph shows the top N AdGuard Home domains."
+             style="max-width: 1000px; width: 100%; height: auto;" />
+    </a>
+</p>
+
+This graph shows the top N AdGuard Home domains.
+
+### percent
+<p align="center">
+    <a href="https://github.com/saint-lascivious/adguardhome_munin_">
+        <img src="https://raw.githubusercontent.com/wiki/saint-lascivious/adguardhome_munin_/images/gallery/adguardhome_munin_percent-day.png"
+             alt="This graph shows AdGuard Home's blocked query percentage."
+             style="max-width: 1000px; width: 100%; height: auto;" />
+    </a>
+</p>
+
+This graph shows AdGuard Home's blocked query percentage.
+
+### processing
+<p align="center">
+    <a href="https://github.com/saint-lascivious/adguardhome_munin_">
+        <img src="https://raw.githubusercontent.com/wiki/saint-lascivious/adguardhome_munin_/images/gallery/adguardhome_munin_processing-day.png"
+             alt="This graph shows AdGuard Home's average DNS processing time."
+             style="max-width: 1000px; width: 100%; height: auto;" />
+    </a>
+</p>
+
+This graph shows AdGuard Home's average DNS processing time.
+
+### queries
+<p align="center">
+    <a href="https://github.com/saint-lascivious/adguardhome_munin_">
+        <img src="https://raw.githubusercontent.com/wiki/saint-lascivious/adguardhome_munin_/images/gallery/adguardhome_munin_queries-day.png"
+             alt="This graph shows AdGuard Home's DNS query statistics."
+             style="max-width: 1000px; width: 100%; height: auto;" />
+    </a>
+</p>
+
+This graph shows AdGuard Home's DNS query statistics.
+
+### status
+<p align="center">
+    <a href="https://github.com/saint-lascivious/adguardhome_munin_">
+        <img src="https://raw.githubusercontent.com/wiki/saint-lascivious/adguardhome_munin_/images/gallery/adguardhome_munin_status-day.png"
+             alt="This graph shows AdGuard Home's protection status."
+             style="max-width: 1000px; width: 100%; height: auto;" />
+    </a>
+</p>
+
+This graph shows AdGuard Home's protection status.
+
+### upstreams
+<p align="center">
+    <a href="https://github.com/saint-lascivious/adguardhome_munin_">
+        <img src="https://raw.githubusercontent.com/wiki/saint-lascivious/adguardhome_munin_/images/gallery/adguardhome_munin_upstreams-day.png"
+             alt="This graph shows the top N AdGuard Home upstreams."
+             style="max-width: 1000px; width: 100%; height: auto;" />
+    </a>
+</p>
+
+This graph shows the top N AdGuard Home upstreams.
+
+### upstreams_avg
+<p align="center">
+    <a href="https://github.com/saint-lascivious/adguardhome_munin_">
+        <img src="https://raw.githubusercontent.com/wiki/saint-lascivious/adguardhome_munin_/images/gallery/adguardhome_munin_upstreams_avg-day.png"
+             alt="This graph shows average response time for the top N AdGuard Home upstreams."
+             style="max-width: 1000px; width: 100%; height: auto;" />
+    </a>
+</p>
+
+This graph shows average response time for the top N AdGuard Home upstreams.
+
+---
+
 ## License
 
 This project is licensed under the [GNU GPL v3](https://www.gnu.org/licenses/gpl-3.0.html).

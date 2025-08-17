@@ -468,14 +468,14 @@ adguardhome_munin_config_clients() {
         "${state_file}" \
         "client" \
         "" \
-        "100000" \
+        "" \
         "${graph_draw}" \
         "yes" \
         "" \
         "" \
         "0" \
         "${graph_type}" \
-        "0:50000" \
+        "" \
         "No clients" \
         "none"
 }
@@ -570,14 +570,14 @@ adguardhome_munin_config_domains() {
         "${state_file}" \
         "domain" \
         "" \
-        "100000" \
+        "" \
         "${graph_draw}" \
         "yes" \
         "" \
         "" \
         "0" \
         "${graph_type}" \
-        "0:50000" \
+        "" \
         "No domains" \
         "none"
 }
@@ -737,7 +737,7 @@ adguardhome_munin_config_queries() {
     adguardhome_munin_print \
         "num_dns_queries" \
         "" \
-        "200000" \
+        "" \
         "${graph_draw}" \
         "yes" \
         "AdGuard Home DNS queries" \
@@ -745,11 +745,11 @@ adguardhome_munin_config_queries() {
         "" \
         "0" \
         "${graph_type}" \
-        "0:100000"
+        ""
     adguardhome_munin_print \
         "num_blocked_filtering" \
         "" \
-        "100000" \
+        "" \
         "${graph_draw}" \
         "yes" \
         "AdGuard Home blocked filtering" \
@@ -757,11 +757,11 @@ adguardhome_munin_config_queries() {
         "" \
         "0" \
         "${graph_type}" \
-        "0:50000"
+        ""
     adguardhome_munin_print \
         "num_replaced_safebrowsing" \
         "" \
-        "100000" \
+        "" \
         "${graph_draw}" \
         "yes" \
         "AdGuard Home replaced safebrowsing" \
@@ -769,11 +769,11 @@ adguardhome_munin_config_queries() {
         "" \
         "0" \
         "${graph_type}" \
-        "0:50000"
+        ""
     adguardhome_munin_print \
         "num_replaced_parental" \
         "" \
-        "100000" \
+        "" \
         "${graph_draw}" \
         "yes" \
         "AdGuard Home replaced parental" \
@@ -781,11 +781,11 @@ adguardhome_munin_config_queries() {
         "" \
         "0" \
         "${graph_type}" \
-        "0:50000"
+        ""
     adguardhome_munin_print \
         "num_replaced_safesearch" \
         "" \
-        "100000" \
+        "" \
         "${graph_draw}" \
         "yes" \
         "AdGuard Home replaced safesearch" \
@@ -793,7 +793,7 @@ adguardhome_munin_config_queries() {
         "" \
         "0" \
         "${graph_type}" \
-        "0:50000"
+        ""
 }
 
 adguardhome_munin_fetch_queries() {
@@ -1002,7 +1002,7 @@ adguardhome_munin_config_upstreams_avg() {
         "graph_args ${graph_args}" \
         "graph_category ${graph_category}" \
         "graph_height ${graph_height}" \
-        "graph_info This graph shows average response time for top AdGuard Home upstreams" \
+        "graph_info This graph shows average response time for the top ${top_n} AdGuard Home upstreams" \
         "graph_scale ${graph_scale}" \
         "graph_title AdGuard Home average upstream response time" \
         "graph_vlabel seconds" \
