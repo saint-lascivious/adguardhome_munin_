@@ -162,16 +162,24 @@ Older versions of Munin may not recognise the `fetch` command, in which case it 
 ## Example Graph Gallery
 
 ### blocked
-![alt text][blocked]
-
-[blocked]:https://raw.githubusercontent.com/saint-lascivious/adguardhome_munin_/master/images/gallery/adguardhome_munin_blocked-day.png "This graph shows the top N AdGuard Home blocked domains."
+<p align="center">
+    <a href="https://github.com/saint-lascivious/adguardhome_munin_">
+        <img src="https://raw.githubusercontent.com/saint-lascivious/adguardhome_munin_/master/images/gallery/adguardhome_munin_blocked-day.png"
+             alt="This graph shows the top N AdGuard Home blocked domains."
+             style="max-width: 1000px; width: 100%; height: auto;" />
+    </a>
+</p>
 
 This graph shows the top N AdGuard Home blocked domains.
 
 ### clients
-![alt text][clients]
-
-[clients]:https://raw.githubusercontent.com/saint-lascivious/adguardhome_munin_/master/images/gallery/adguardhome_munin_clients-day.png "This graph shows the top N AdGuard Home clients."
+<p align="center">
+    <a href="https://github.com/saint-lascivious/adguardhome_munin_">
+        <img src="https://raw.githubusercontent.com/saint-lascivious/adguardhome_munin_/master/images/gallery/adguardhome_munin_clients-day.png"
+             alt="This graph shows the top N AdGuard Home clients."
+             style="max-width: 1000px; width: 100%; height: auto;" />
+    </a>
+</p>
 
 This graph shows the top N AdGuard Home clients.
 
