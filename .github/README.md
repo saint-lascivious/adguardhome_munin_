@@ -1,19 +1,47 @@
 # adguardhome_munin_
 
-Munin plugins for monitoring various AdGuardHome statistics.
+[Munin](https://munin-monitoring.org) [plugins](https://gallery.munin-monitoring.org) for monitoring various [AdGuard Home](https://github.com/AdguardTeam/AdGuardHome) statistics.
+
+---
+
+- [Overview](#overview)
+- [Features](#features)
+- [Requirements](#requirements)
+- [Install](#install)
+- [Configuration](#configuration)
+- [Usage](#usage)
+- [Uninstall](#uninstall)
+- [Compatibility](#compatibility)
+- [Example Graph Gallery](#example-graph-gallery)
+    - [blocked](#blocked)
+    - [clients](#clients)
+    - [domains](#domains)
+    - [percent](#percent)
+    - [processing](#processing)
+    - [queries](#queries)
+    - [status](#status)
+    - [upstreams](#upstreams)
+    - [upstreams_avg](#upstreams_avg)
+- [Related Projects](#related-projects)
+    - [pihole_munin_](#pihole_munin_)
+- [License](#license)
 
 ---
 
 ## Overview
 
-`adguardhome_munin_` is a POSIX shell Munin wildcard plugin, providing a suite of graphs for monitoring AdGuardHome instances.
+`adguardhome_munin_` is a POSIX shell Munin wildcard plugin, providing a suite of graphs for monitoring AdGuard Home instances.
+
+It supports multiple graphs, each tracking different aspects of AdGuard Home's performance and statistics, such as blocked domains, clients, queried domains, DNS query counts, blocked percentages, processing times, upstream server usage, and average response times.
+
+---
 
 ## Features
 
 - Track the top N blocked domains, clients, and queried domains
 - Monitor DNS query counts, blocked percentages, and processing times
 - Graph upstream server usage and average response times
-- Display AdGuardHome protection status
+- Display AdGuard Home's protection status
 - Handles empty data gracefully
 - State files persist dynamic data (such as top N graph items)
 
@@ -23,7 +51,7 @@ Munin plugins for monitoring various AdGuardHome statistics.
 
 - [Munin](http://munin-monitoring.org/)
     `munin` and `munin-node` configured and running (not necessarily on the same host as each other)
-- [AdGuardHome](https://adguard.com)
+- [AdGuard Home](https://github.com/AdguardTeam/AdGuardHome)
     `AdGuardHome` configured, running and accessible via its API (not necessarily on the same host as Munin)
 - [curl](https://curl.se/), [jq](https://jqlang.org/), and [mktemp](https://www.gnu.org/software/coreutils/manual/html_node/mktemp-invocation.html) installed on the system where the plugin is run.
     These are used for API calls, JSON parsing, and temporary file handling respectively.
@@ -67,7 +95,7 @@ Munin plugins for monitoring various AdGuardHome statistics.
         # Create symbolic links for all plugins at once
         for plugin in blocked clients domains percent processing queries status upstreams upstreams_avg; do
             ln -s /usr/share/munin/plugins/adguardhome_munin_ \
-                /etc/munin/plugins/adguardhome_munin_$plugin
+                /etc/munin/plugins/adguardhome_munin_"${plugin}"
         done
     ```
 
@@ -91,22 +119,22 @@ Munin plugins for monitoring various AdGuardHome statistics.
 Set the following environment variables as needed (defaults shown):
 
 - `proto`
-    - Protocol to use for AdGuardHome API requests.
-    - Can be set to `http` if your AdGuardHome instance does not use HTTPS.
-    - Default: `https`
+    - Protocol to use for AdGuard Home API requests.
+    - Can be set to `https` if your AdGuard Home instance has HTTPS enabled and a valid SSL certificate.
+    - Default: `http`
 - `host`
-    - This is the IP address or hostname of your AdGuardHome instance.
+    - This is the IP address or hostname of your AdGuard Home instance.
     - Default: `127.0.0.1`
 - `port`
-    - The port on which your AdGuardHome instance is running.
-    - Default: `443` (use `80` for HTTP).
+    - The port on which your AdGuard Home instance is running.
+    - Default: `80` (use `443` for HTTP).
 - `username`
     - Required.
-    - The username for AdGuardHome API authentication.
+    - The username for AdGuard Home API authentication.
     - Default: `""` (empty).
 - `password`
     - Required.
-    - The password for AdGuardHome API authentication.
+    - The password for AdGuard Home API authentication.
     - Default: `""` (empty).
 - `top_n`
     - The number of top items to display in graphs (e.g., top blocked domains, clients, etc.).
@@ -124,9 +152,15 @@ Example for `/etc/munin/plugin-conf.d/adguardhome_munin_`:
 
     # These fields are optional, unless you want to override the defaults
     # as shown below
-    env.proto http
+
+    # Protocol to use for AdGuard Home API requests
+    env.proto https
+    # IP address or hostname of your AdGuard Home instance
     env.host 192.168.1.123
-    env.port 80
+    # Use `https` if your AdGuard Home instance has HTTPS enabled
+    # and a valid SSL certificate.
+    env.port 443
+    # Set the number of top items to display in graphs
     env.top_n 20
 ```
 
@@ -153,8 +187,34 @@ Older versions of Munin may not recognise the `fetch` command, in which case it 
 
 ---
 
+## Uninstall
+
+1. Remove plugin symlinks from `/etc/munin/plugins/`
+
+    ```sh
+        # Remove all symbolic links for the plugin
+        rm /etc/munin/plugins/adguardhome_munin_*
+    ```
+
+2. Remove the plugin script from `/usr/share/munin/plugins/`
+
+    ```sh
+        # Remove the plugin script
+        rm /usr/share/munin/plugins/adguardhome_munin_
+    ```
+
+3. Restart the Munin node
+
+    ```sh
+        # Restart the Munin node service to apply changes
+        # This command may vary based on your system's init system
+        systemctl restart munin-node
+    ```
+
+---
+
 ## Compatibility
-- AdGuardHome >= v0.107.0
+- AdGuard Home >= v0.107.0
 - Munin >= 2.0
 
 ---
@@ -259,6 +319,15 @@ This graph shows the top N AdGuard Home upstreams.
 </p>
 
 This graph shows average response time for the top N AdGuard Home upstreams.
+
+---
+
+## Related Projects
+
+### pihole_munin_
+- [pihole_munin_](https://github.com/saint-lascivious/pihole_munin_)
+
+A Munin plugin for monitoring Pi-hole statistics, similar to `adguardhome_munin_` but tailored for Pi-hole instances.
 
 ---
 
