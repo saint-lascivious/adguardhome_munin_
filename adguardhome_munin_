@@ -107,10 +107,10 @@ adguardhome_munin_tempfiles=""
 adguardhome_munin_mktemp() {
     # Create a temporary file in a specified directory with a given prefix.
     # Arguments:
-    #   ${1} = directory (optional, defaults to /tmp if not provided)
-    #   ${2} = filename prefix (required, defaults to "adguardhome_munin_" if not provided)
-    #   Uses mktemp to ensure unique filenames.
-    #   Falls back to mktemp -t if the directory argument is not supported.
+    #  ${1} = directory (optional, defaults to /tmp if not provided)
+    #  ${2} = filename prefix (required, defaults to "adguardhome_munin_" if not provided)
+    # Uses mktemp to ensure unique filenames.
+    # Falls back to mktemp -t if the directory argument is not supported.
     mktemp_dir="${1:-/tmp}"
     mktemp_prefix="${2:-adguardhome_munin_}"
     tmpfile=$(mktemp "${mktemp_dir}/${mktemp_prefix}.XXXXXX" 2>/dev/null || mktemp -t "${mktemp_prefix}.XXXXXX")
@@ -127,7 +127,7 @@ trap 'rm -f ${adguardhome_munin_tempfiles}' EXIT
 adguardhome_munin_print() {
     # Print a Munin field definition for a given key and its attributes.
     # Arguments:
-    #  ${1} = key (sanitized, must match Munin field requirements)
+    #  ${1} = raw key (may contain any characters)
     #  ${2} = colour (hex RGB, optional)
     #  ${3} = critical (threshold value, optional)
     #  ${4} = draw (graph style, e.g. LINE1, AREA, etc., optional)
@@ -138,8 +138,19 @@ adguardhome_munin_print() {
     #  ${9} = min (minimum value, optional)
     # ${10} = type (GAUGE, COUNTER, etc., optional)
     # ${11} = warning (threshold value, optional)
-    # Validate key format: must start with a letter or underscore, followed by alphanumerics/underscores
-    if ! printf %s "${1}" | grep -Eq '^[a-zA-Z_][a-zA-Z0-9_]*$'; then
+    # ${12} = prefix (optional, used if key starts with a digit)
+    # Sanitize key: remove backslash escapes, hash, replace non-alphanum with _
+    key="$(printf "%s" "${1}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
+    # Prefix if key starts with a digit
+    if [ -n "${12}" ]; then
+        case "${key}" in
+            [0-9]*)
+                key="${12}_${key}"
+                ;;
+        esac
+    fi
+    # Validate key format
+    if ! printf %s "${key}" | grep -Eq '^[a-zA-Z_][a-zA-Z0-9_]*$'; then
         printf "%s\n" \
             "Error: Invalid or missing key." \
             "Key must contain at least one printable character after sanitization." >&2
@@ -149,7 +160,7 @@ adguardhome_munin_print() {
     label_clean="$(printf "%s" "${7}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#')"
     # Truncate label if longer than 19 characters for Munin compatibility
     if [ "${#label_clean}" -gt 19 ]; then
-        label_clean="$(printf "%s" "${label_clean}" | cut -c1-18)…"
+        label_clean="$(printf "%s" "${label_clean}" | cut -c1-16)..."
     fi
     # Validate sanitized label
     if [ -z "${label_clean}" ]; then
@@ -169,70 +180,70 @@ adguardhome_munin_print() {
             colour_val="${r}${r}${g}${g}${b}${b}"
         fi
         if printf %s "${colour_val}" | grep -Eq '^[0-9A-Fa-f]{6}$'; then
-            printf "%s.colour %s\n" "${1}" "${colour_val}"
+            printf "%s.colour %s\n" "${key}" "${colour_val}"
         fi
     fi
     # Output critical threshold if provided and valid
     if [ -n "${3}" ] && [ -n "$(printf '%s' "${3}" | tr -d '[:space:]')" ]; then
         if printf %s "${3}" | grep -Eq '^(-?[0-9]+(\.[0-9]*)?)?(:(-?[0-9]+(\.[0-9]*)?)?)?$|^(-?[0-9]+(\.[0-9]*)?):$'; then
-            printf "%s.critical %s\n" "${1}" "${3}"
+            printf "%s.critical %s\n" "${key}" "${3}"
         fi
     fi
     # Output draw style if provided and valid
     if [ -n "${4}" ] && [ -n "$(printf '%s' "${4}" | tr -d '[:space:]')" ]; then
         if printf %s "${4}" | grep -Eq '^LINE[0-9]*$|^AREA$|^STACK$|^AREASTACK$|^LINESTACK[0-9]*$'; then
-            printf "%s.draw %s\n" "${1}" "${4}"
+            printf "%s.draw %s\n" "${key}" "${4}"
         fi
     fi
     # Output graph flag if provided and valid
     if [ -n "${5}" ] && [ -n "$(printf '%s' "${5}" | tr -d '[:space:]')" ]; then
         case "${5}" in
             "yes"|"true")
-                printf "%s.graph %s\n" "${1}" "yes"
+                printf "%s.graph %s\n" "${key}" "yes"
             ;;
             "no"|"false")
-                printf "%s.graph %s\n" "${1}" "no"
+                printf "%s.graph %s\n" "${key}" "no"
             ;;
         esac
     fi
     # Output info string if provided
     if [ -n "${6}" ] && [ -n "$(printf '%s' "${6}" | tr -d '[:space:]')" ]; then
-        printf "%s.info %s\n" "${1}" "${6}"
+        printf "%s.info %s\n" "${key}" "${6}"
     fi
     # Output sanitized label
-    printf "%s.label %s\n" "${1}" "${label_clean}"
+    printf "%s.label %s\n" "${key}" "${label_clean}"
     # Output max value if provided and valid
     if [ -n "${8}" ] && [ -n "$(printf '%s' "${8}" | tr -d '[:space:]')" ]; then
         if printf %s "${8}" | grep -Eq '^(-?[0-9]+(\.[0-9]*)?)$'; then
-            printf "%s.max %s\n" "${1}" "${8}"
+            printf "%s.max %s\n" "${key}" "${8}"
         fi
     fi
     # Output min value if provided and valid
     if [ -n "${9}" ] && [ -n "$(printf '%s' "${9}" | tr -d '[:space:]')" ]; then
         if printf %s "${9}" | grep -Eq '^(-?[0-9]+(\.[0-9]*)?)$'; then
-            printf "%s.min %s\n" "${1}" "${9}"
+            printf "%s.min %s\n" "${key}" "${9}"
         fi
     fi
     # Output type if provided and valid (Munin expects GAUGE, COUNTER, DERIVE, ABSOLUTE)
     if [ -n "${10}" ] && [ -n "$(printf '%s' "${10}" | tr -d '[:space:]')" ]; then
         case "${10}" in
             "GAUGE"|"COUNTER"|"DERIVE"|"ABSOLUTE")
-                printf "%s.type %s\n" "${1}" "${10}"
+                printf "%s.type %s\n" "${key}" "${10}"
             ;;
         esac
     fi
     # Output warning threshold if provided and valid
     if [ -n "${11}" ] && [ -n "$(printf '%s' "${11}" | tr -d '[:space:]')" ]; then
         if printf %s "${11}" | grep -Eq '^(-?[0-9]+(\.[0-9]*)?)?(:(-?[0-9]+(\.[0-9]*)?)?)?$|^(-?[0-9]+(\.[0-9]*)?):$'; then
-            printf "%s.warning %s\n" "${1}" "${11}"
+            printf "%s.warning %s\n" "${key}" "${11}"
         fi
     fi
 }
 
 adguardhome_munin_print_from_state() {
-    # Print Munin field definitions for all keys in a state file.
+    # Print Munin field definitions for all key-value pairs in a state file.
     # Arguments:
-    #  ${1} = state_file (file containing raw keys, one per line)
+    #  ${1} = state_file (file containing key value pairs, one per line)
     #  ${2} = plugin_type (prefix for keys starting with a digit)
     #  ${3} = colour
     #  ${4} = critical
@@ -248,30 +259,19 @@ adguardhome_munin_print_from_state() {
     if [ -s "${1}" ]; then
         # State file exists and is not empty
         while read -r raw_key _; do
-            # Sanitize key: remove backslash escape sequences and hash, then replace non-alphanum with _
-            key="$(printf "%s" "${raw_key}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
-            case "${key}" in
-                [0-9]*)
-                    key="${2}_${key}"
-                    ;;
-            esac
-            # Sanitize label: remove backslash escape sequences and hash
-            label="$(printf "%s" "${raw_key}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#')"
-            if [ -z "${label}" ]; then
-                label="invalid"
-            fi
             adguardhome_munin_print \
-                "${key}" \
+                "${raw_key}" \
                 "${3}" \
                 "${4}" \
                 "${5}" \
                 "${6}" \
+                "${7}" \
                 "${raw_key}" \
-                "${label}" \
                 "${8}" \
                 "${9}" \
                 "${10}" \
-                "${11}"
+                "${11}" \
+                "${2}"
         done < "${1}"
     else
         adguardhome_munin_print \
@@ -743,7 +743,7 @@ adguardhome_munin_config_percent() {
         "100" \
         "0" \
         "GAUGE" \
-        "0:75"
+        "0:85"
 }
 
 adguardhome_munin_fetch_percent() {
@@ -1183,12 +1183,9 @@ adguardhome_munin_fetch_upstreams_avg() {
     tmp_state_file=$(adguardhome_munin_mktemp "${state_dir}" "upstreams_avg_state_tmp")
     # Write directly to the filtered file, even if empty
     printf "%s\n" "${upstreams_response}" | jq -r ".top_upstreams_avg_time[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
-    awk 'NF == 2 { 
-        avg_time = sprintf("%s", $2)
-        formatted = sprintf("%d.%s", int(avg_time), substr(avg_time ~ /\./ ? substr(avg_time, index(avg_time, ".")+1) "000" : "000", 1, 3))
-        gsub(/\.0*$/, "", formatted)
-        gsub(/(\.[0-9]*[1-9])0*$/, "\\1", formatted)
-        print $1, formatted
+    awk 'NF == 2 {
+        # Format to 2 decimal places
+        printf "%s %.2f\n", $1, $2 + 0
     }' > "${tmp_state_file}.filtered"
     # Merge new values into persistent state file, keeping the latest value for each key.
     if [ -f "${state_file}" ]; then
