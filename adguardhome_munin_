@@ -75,14 +75,16 @@ graph_type="${graph_type:-"DERIVE"}"
 graph_width="${graph_width:-"400"}"
 
 state_dir=${MUNIN_PLUGSTATE:-"/tmp/adguardhome_munin_"}
-state_file="${state_dir}/${adguardhome_munin_plugin_id}.state"
+state_file="${state_dir}/adguardhome_munin_${adguardhome_munin_plugin_id}.state"
 
 adguardhome_munin_term_cleanup() {
+    # Reset terminal to sane mode
     stty sane
     printf '\n'
 }
 
 adguardhome_munin_abort_handler() {
+    # Clean up and exit on SIGINT or SIGTERM
     adguardhome_munin_term_cleanup
     printf "%s\n" "Execution of '${script_path}' aborted (SIGINT or SIGTERM)." >&2
     exit 130
@@ -96,7 +98,11 @@ fi
 # Set terminal to sane mode on exit or interrupt
 trap 'adguardhome_munin_abort_handler' INT TERM
 
+# Ensure state dir exists
 mkdir -p "${state_dir}"
+
+# Track all temp files created during this run
+adguardhome_munin_tempfiles=""
 
 adguardhome_munin_mktemp() {
     # Create a temporary file in a specified directory with a given prefix.
@@ -107,18 +113,16 @@ adguardhome_munin_mktemp() {
     #   Falls back to mktemp -t if the directory argument is not supported.
     mktemp_dir="${1:-/tmp}"
     mktemp_prefix="${2:-adguardhome_munin_}"
-    mktemp "${mktemp_dir}/${mktemp_prefix}.XXXXXX" 2>/dev/null || mktemp -t "${mktemp_prefix}.XXXXXX" || {
-        # If mktemp fails, print an error message and exit with status 1.
-        printf "%s\n" "  [❌] Unable to create temporary file '${mktemp_prefix}'." >&2
-        exit 1
-    }
+    tmpfile=$(mktemp "${mktemp_dir}/${mktemp_prefix}.XXXXXX" 2>/dev/null || mktemp -t "${mktemp_prefix}.XXXXXX")
+    adguardhome_munin_tempfiles="${adguardhome_munin_tempfiles} ${tmpfile}"
+    printf "%s" "${tmpfile}"
 }
 
 # Create a temporary cookie file for storing session cookies
 cookie_file=$(adguardhome_munin_mktemp "${state_dir}" "cookie_file")
 
-# Ensure the cookie file is removed on exit
-trap 'rm -f "${cookie_file}"' EXIT
+# Ensure all temp files are removed on exit
+trap 'rm -f ${adguardhome_munin_tempfiles}' EXIT
 
 adguardhome_munin_print() {
     # Print a Munin field definition for a given key and its attributes.
@@ -136,18 +140,22 @@ adguardhome_munin_print() {
     # ${11} = warning (threshold value, optional)
     # Validate key format: must start with a letter or underscore, followed by alphanumerics/underscores
     if ! printf %s "${1}" | grep -Eq '^[a-zA-Z_][a-zA-Z0-9_]*$'; then
-        printf "%s\n" "Error: Invalid or missing key." >&2
+        printf "%s\n" \
+            "Error: Invalid or missing key." \
+            "Key must contain at least one printable character after sanitization." >&2
         exit 1
     fi
     # Sanitize label: remove backslash escape sequences and hash characters
     label_clean="$(printf "%s" "${7}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#')"
     # Truncate label if longer than 19 characters for Munin compatibility
     if [ "${#label_clean}" -gt 19 ]; then
-        label_clean="$(printf "%s" "${label_clean}" | cut -c1-16)..."
+        label_clean="$(printf "%s" "${label_clean}" | cut -c1-18)…"
     fi
     # Validate sanitized label
     if [ -z "${label_clean}" ]; then
-        printf "%s\n" "Error: Invalid or missing label." >&2
+        printf "%s\n" \
+            "Error: Invalid or missing label." \
+            "Label must contain at least one printable character after sanitization." >&2
         exit 1
     fi
     # Output colour if provided and valid (Munin expects 6-digit hex)
@@ -249,9 +257,6 @@ adguardhome_munin_print_from_state() {
             esac
             # Sanitize label: remove backslash escape sequences and hash
             label="$(printf "%s" "${raw_key}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#')"
-            if [ "${#label}" -gt 19 ]; then
-                label="$(printf "%s" "${label}" | cut -c1-16)..."
-            fi
             if [ -z "${label}" ]; then
                 label="invalid"
             fi
@@ -289,7 +294,7 @@ adguardhome_munin_auth() {
     # Sends a POST request with username and password to the login endpoint.
     # Stores cookies in ${cookie_file} for subsequent requests.
     # Returns 0 on success, 1 on failure.
-    auth_response=$(curl --connect-timeout 5 -k -s -L \
+    auth_response=$(curl --connect-timeout 2 --insecure --silent --location \
         -H "Content-Type: application/json" \
         -c "${cookie_file}" \
         -d "{\"name\":\"${agh_username}\",\"password\":\"${agh_password}\"}" \
@@ -304,18 +309,24 @@ adguardhome_munin_auth() {
             ;;
         "400")
             # Invalid credentials
-            printf "Error: Invalid username or password.\n" >&2
+            printf "%s\n" \
+                "Error: Invalid credentials." \
+                "Please check your username and password." >&2
             return 1
             ;;
         "429")
             # Too many login attempts
-            printf "Error: Out of login attempts.\n" >&2
+            printf "%s\n" \
+                "Error: Out of login attempts." \
+                "Please wait and try again later." >&2
             return 1
             ;;
         *)
             # Any other response code
             # This could indicate an API error or misconfiguration
-            printf "Error: Unexpected HTTP response from AdGuard Home API (login): %s\n" "${http_code}" >&2
+            printf "%s\n" \
+                "Error: Unexpected HTTP response." \
+                "Unexpected response code from AdGuard Home API (login): ${http_code}" >&2
             return 1
             ;;
     esac
@@ -326,7 +337,7 @@ adguardhome_munin_logout() {
     # Sends a GET request to the logout endpoint using the stored cookie.
     # Removes the cookie file after logout.
     # Returns 0 on success, 1 on failure.
-    logout_response=$(curl --connect-timeout 5 -k -s -L \
+    logout_response=$(curl --connect-timeout 2 --insecure --silent --location \
         -H "Content-Type: application/json" \
         -b "${cookie_file}" \
         -w "\n%{http_code}" \
@@ -341,17 +352,57 @@ adguardhome_munin_logout() {
             ;;
         *)
             # Any other error
-            printf "%s\n" "Error: Unexpected HTTP response from AdGuard Home API (logout): ${http_code}" >&2
+            printf "%s\n" \
+                "Error: Unexpected HTTP response." \
+                "Unexpected response code from AdGuard Home API (logout): ${http_code}" >&2
             return 1
             ;;
     esac
+}
+
+adguardhome_munin_rev_ptr() {
+    ip_port="$1"
+    reverse_lookup_cache="${state_dir}/adguardhome_munin_rev_ptr.state"
+    # Remove brackets for IPv6 [::1]:5353
+    ip_port=$(printf "%s" "${ip_port}" | sed 's/^\[\(.*\)\]$/\1/')
+    # Extract IP from IP:PORT
+    if printf "%s" "${ip_port}" | grep -Eq '^\[?[0-9a-fA-F:]+\]?:[0-9]+$'; then
+        ip=$(printf "%s" "${ip_port}" | sed 's/\(.*\):[0-9]\+$/\1/')
+    elif printf "%s" "${ip_port}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(:[0-9]+)?$'; then
+        ip=$(printf "%s" "${ip_port}" | cut -d: -f1)
+    else
+        ip="${ip_port}"
+    fi
+    # Check cache first
+    if grep -q "^${ip} " "${reverse_lookup_cache}" 2>/dev/null; then
+        cached=$(grep "^${ip} " "${reverse_lookup_cache}" | head -n1 | cut -d' ' -f2-)
+        if [ "${cached}" = "-" ]; then
+            echo "${ip_port}"
+        else
+            echo "${cached}"
+        fi
+        return
+    fi
+    # Do reverse lookup
+    hostname=$(getent hosts "${ip}" | awk '{print $2}' | head -n1)
+    if [ -z "${hostname}" ]; then
+        hostname=$(dig +time=2 +short -x "${ip}" | head -n1)
+    fi
+    # Cache result (negative or positive)
+    if [ -n "${hostname}" ]; then
+        printf "%s %s\n" "${ip}" "${hostname}" >> "${reverse_lookup_cache}"
+        echo "${hostname}"
+    else
+        printf "%s -\n" "${ip}" >> "${reverse_lookup_cache}"
+        echo "${ip_port}"
+    fi
 }
 
 adguardhome_munin_config_blocked() {
     # Output Munin graph configuration for the "blocked" plugin.
     # This sets up the graph's appearance and labels.
     # Query AdGuard Home API for blocked domain stats.
-    blocked_response=$(curl --connect-timeout 5 -k -s -L \
+    blocked_response=$(curl --connect-timeout 2 --insecure --silent --location \
         -b "${cookie_file}" \
         "${api}${stats_endpoint}")
     # Extract the top blocked domains and their values, filter out lines with missing values.
@@ -408,7 +459,7 @@ adguardhome_munin_config_blocked() {
 adguardhome_munin_fetch_blocked() {
     # Fetch current values for the "blocked" plugin.
     # Queries AdGuard Home API for blocked domain stats.
-    blocked_response=$(curl --connect-timeout 5 -k -s -L \
+    blocked_response=$(curl --connect-timeout 2 --insecure --silent --location \
         -b "${cookie_file}" \
         "${api}${stats_endpoint}")
     tmp_state_file=$(adguardhome_munin_mktemp "${state_dir}" "blocked_state_tmp")
@@ -449,7 +500,7 @@ adguardhome_munin_config_clients() {
     # Output Munin graph configuration for the "clients" plugin.
     # This sets up the graph's appearance and labels for top clients.
     # Query AdGuard Home API for client stats.
-    clients_response=$(curl --connect-timeout 5 -k -s -L \
+    clients_response=$(curl --connect-timeout 2 --insecure --silent --location \
         -b "${cookie_file}" \
         "${api}${stats_endpoint}")
     # Extract the top clients and their values, filter out lines with missing values.
@@ -459,10 +510,7 @@ adguardhome_munin_config_clients() {
     # Merge new key-value pairs into the persistent state file, keeping the latest value for each key.
     if [ -s "${tmp_keys_file}" ]; then
         if [ -f "${state_file}" ]; then
-            awk '
-                { a[$1]=$2 }
-                END { for (k in a) print k, a[k] }
-            ' "${state_file}" "${tmp_keys_file}" > "${state_file}.merged"
+            awk '{ a[$1]=$2 } END { for (k in a) print k, a[k] }' "${state_file}" "${tmp_keys_file}" > "${state_file}.merged"
             mv "${state_file}.merged" "${state_file}"
         else
             mv "${tmp_keys_file}" "${state_file}"
@@ -486,27 +534,56 @@ adguardhome_munin_config_clients() {
         "${print_total_line}" \
         "graph_vlabel queries / second" \
         "graph_width ${graph_width}"
-    # Print Munin field definitions for all keys in the state file.
-    adguardhome_munin_print_from_state \
-        "${state_file}" \
-        "client" \
-        "" \
-        "" \
-        "${graph_draw}" \
-        "yes" \
-        "" \
-        "" \
-        "0" \
-        "${graph_type}" \
-        "" \
-        "No clients" \
-        "none"
+    if [ -s "${state_file}" ]; then
+        while read -r raw_key _; do
+            key="$(printf "%s" "${raw_key}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
+            case "${key}" in
+                [0-9]*)
+                    key="client_${key}"
+                    ;;
+            esac
+            resolved="$(adguardhome_munin_rev_ptr "${raw_key}")"
+            port="$(printf "%s" "${raw_key}" | awk -F: '{print $2}')"
+            if [ -n "${resolved}" ] && [ "${resolved}" != "${raw_key}" ]; then
+                info="Client: ${resolved} (${raw_key})"
+                label="${resolved}:${port}"
+            else
+                info="Client: ${raw_key}"
+                label="${raw_key}"
+            fi
+            adguardhome_munin_print \
+                "${key}" \
+                "" \
+                "" \
+                "${graph_draw}" \
+                "yes" \
+                "${info}" \
+                "${label}" \
+                "" \
+                "0" \
+                "${graph_type}" \
+                ""
+        done < "${state_file}"
+    else
+        adguardhome_munin_print \
+            "none" \
+            "" \
+            "" \
+            "${graph_draw}" \
+            "yes" \
+            "No clients" \
+            "none" \
+            "" \
+            "0" \
+            "${graph_type}" \
+            ""
+    fi
 }
 
 adguardhome_munin_fetch_clients() {
     # Fetch current values for the "clients" plugin.
     # Queries AdGuard Home API for client stats.
-    clients_response=$(curl --connect-timeout 5 -k -s -L \
+    clients_response=$(curl --connect-timeout 2 --insecure --silent --location \
         -b "${cookie_file}" \
         "${api}${stats_endpoint}")
     tmp_state_file=$(adguardhome_munin_mktemp "${state_dir}" "clients_state_tmp")
@@ -547,7 +624,7 @@ adguardhome_munin_config_domains() {
     # Output Munin graph configuration for the "domains" plugin.
     # This sets up the graph's appearance and labels for top domains.
     # Query AdGuard Home API for domain stats.
-    domains_response=$(curl --connect-timeout 5 -k -s -L \
+    domains_response=$(curl --connect-timeout 2 --insecure --silent --location \
         -b "${cookie_file}" \
         "${api}${stats_endpoint}")
     # Extract the top domains and their values, filter out lines with missing values.
@@ -604,7 +681,7 @@ adguardhome_munin_config_domains() {
 adguardhome_munin_fetch_domains() {
     # Fetch current values for the "domains" plugin.
     # Queries AdGuard Home API for domain stats.
-    domains_response=$(curl --connect-timeout 5 -k -s -L \
+    domains_response=$(curl --connect-timeout 2 --insecure --silent --location \
         -b "${cookie_file}" \
         "${api}${stats_endpoint}")
     tmp_state_file=$(adguardhome_munin_mktemp "${state_dir}" "domains_state_tmp")
@@ -672,7 +749,7 @@ adguardhome_munin_config_percent() {
 adguardhome_munin_fetch_percent() {
     # Fetch current value for the "percent" plugin.
     # Queries AdGuard Home API for DNS query and blocked stats.
-    percent_response=$(curl --connect-timeout 5 -k -s -L \
+    percent_response=$(curl --connect-timeout 2 --insecure --silent --location \
         -b "${cookie_file}" \
         "${api}${stats_endpoint}")
     if [ -z "${percent_response}" ]; then
@@ -722,7 +799,7 @@ adguardhome_munin_config_processing() {
 adguardhome_munin_fetch_processing() {
     # Fetch current value for the "processing" plugin.
     # Queries AdGuard Home API for average DNS processing time.
-    processing_response=$(curl --connect-timeout 5 -k -s -L \
+    processing_response=$(curl --connect-timeout 2 --insecure --silent --location \
         -b "${cookie_file}" \
         "${api}${stats_endpoint}")
     if [ -z "${processing_response}" ]; then
@@ -819,7 +896,7 @@ adguardhome_munin_config_queries() {
 adguardhome_munin_fetch_queries() {
     # Fetch current values for the "queries" plugin.
     # Queries AdGuard Home API for DNS query statistics.
-    queries_response=$(curl --connect-timeout 5 -k -s -L \
+    queries_response=$(curl --connect-timeout 2 --insecure --silent --location \
         -b "${cookie_file}" \
         "${api}${stats_endpoint}")
     if [ -z "${queries_response}" ]; then
@@ -877,7 +954,7 @@ adguardhome_munin_config_status() {
 adguardhome_munin_fetch_status() {
     # Fetch current value for the "status" plugin.
     # Queries AdGuard Home API for protection status.
-    status_response=$(curl --connect-timeout 5 -k -s -L \
+    status_response=$(curl --connect-timeout 2 --insecure --silent --location \
         -b "${cookie_file}" \
         "${api}${status_endpoint}")
     protection_enabled=$(printf "%s" "${status_response}" | jq -r '.protection_enabled')
@@ -903,7 +980,7 @@ adguardhome_munin_config_upstreams() {
     # Output Munin graph configuration for the "upstreams" plugin.
     # This sets up the graph's appearance and labels for top upstreams by query count.
     # Query AdGuard Home API for upstream stats.
-    upstreams_response=$(curl --connect-timeout 5 -k -s -L \
+    upstreams_response=$(curl --connect-timeout 2 --insecure --silent --location \
         -b "${cookie_file}" \
         "${api}${stats_endpoint}")
     # Extract the top upstreams and their values, filter out lines with missing values.
@@ -913,10 +990,7 @@ adguardhome_munin_config_upstreams() {
     # Merge new key-value pairs into the persistent state file, keeping the latest value for each key.
     if [ -s "${tmp_keys_file}" ]; then
         if [ -f "${state_file}" ]; then
-            awk '
-                { a[$1]=$2 }
-                END { for (k in a) print k, a[k] }
-            ' "${state_file}" "${tmp_keys_file}" > "${state_file}.merged"
+            awk '{ a[$1]=$2 } END { for (k in a) print k, a[k] }' "${state_file}" "${tmp_keys_file}" > "${state_file}.merged"
             mv "${state_file}.merged" "${state_file}"
         else
             mv "${tmp_keys_file}" "${state_file}"
@@ -940,27 +1014,56 @@ adguardhome_munin_config_upstreams() {
         "${print_total_line}" \
         "graph_vlabel queries / second" \
         "graph_width ${graph_width}"
-    # Print Munin field definitions for all keys in the state file.
-    adguardhome_munin_print_from_state \
-        "${state_file}" \
-        "upstreams" \
-        "" \
-        "" \
-        "${graph_draw}" \
-        "yes" \
-        "AdGuard Home upstreams" \
-        "" \
-        "0" \
-        "${graph_type}" \
-        "" \
-        "No upstreams" \
-        "none"
+    if [ -s "${state_file}" ]; then
+        while read -r raw_key _; do
+            key="$(printf "%s" "${raw_key}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
+            case "${key}" in
+                [0-9]*)
+                    key="upstreams_${key}"
+                    ;;
+            esac
+            resolved="$(adguardhome_munin_rev_ptr "${raw_key}")"
+            port="$(printf "%s" "${raw_key}" | awk -F: '{print $2}')"
+            if [ -n "${resolved}" ] && [ "${resolved}" != "${raw_key}" ]; then
+                info="Upstream: ${resolved} (${raw_key})"
+                label="${resolved}:${port}"
+            else
+                info="Upstream: ${raw_key}"
+                label="${raw_key}"
+            fi
+            adguardhome_munin_print \
+                "${key}" \
+                "" \
+                "" \
+                "${graph_draw}" \
+                "yes" \
+                "${info}" \
+                "${label}" \
+                "" \
+                "0" \
+                "${graph_type}" \
+                ""
+        done < "${state_file}"
+    else
+        adguardhome_munin_print \
+            "none" \
+            "" \
+            "" \
+            "${graph_draw}" \
+            "yes" \
+            "No upstreams" \
+            "none" \
+            "" \
+            "0" \
+            "${graph_type}" \
+            ""
+    fi
 }
 
 adguardhome_munin_fetch_upstreams() {
     # Fetch current values for the "upstreams" plugin.
     # Queries AdGuard Home API for upstream stats.
-    upstreams_response=$(curl --connect-timeout 5 -k -s -L \
+    upstreams_response=$(curl --connect-timeout 2 --insecure --silent --location \
         -b "${cookie_file}" \
         "${api}${stats_endpoint}")
     tmp_state_file=$(adguardhome_munin_mktemp "${state_dir}" "upstreams_state_tmp")
@@ -969,10 +1072,7 @@ adguardhome_munin_fetch_upstreams() {
     awk 'NF == 2' > "${tmp_state_file}.filtered"
     # Merge new values into persistent state file, keeping the latest value for each key.
     if [ -f "${state_file}" ]; then
-        awk '
-            { a[$1]=$2 }
-            END { for (k in a) print k, a[k] }
-        ' "${state_file}" "${tmp_state_file}.filtered" > "${state_file}.merged"
+        awk '{ a[$1]=$2 } END { for (k in a) print k, a[k] }' "${state_file}" "${tmp_state_file}.filtered" > "${state_file}.merged"
         mv "${state_file}.merged" "${state_file}"
     else
         mv "${tmp_state_file}.filtered" "${state_file}"
@@ -1001,7 +1101,7 @@ adguardhome_munin_config_upstreams_avg() {
     # Output Munin graph configuration for the "upstreams_avg" plugin.
     # This sets up the graph's appearance and labels for average upstream response time.
     # Query AdGuard Home API for average upstream response times.
-    upstreams_response=$(curl --connect-timeout 5 -k -s -L \
+    upstreams_response=$(curl --connect-timeout 2 --insecure --silent --location \
         -b "${cookie_file}" \
         "${api}${stats_endpoint}")
     # Extract the top upstreams and their values, filter out lines with missing values.
@@ -1011,10 +1111,7 @@ adguardhome_munin_config_upstreams_avg() {
     # Merge new key-value pairs into the persistent state file, keeping the latest value for each key.
     if [ -s "${tmp_keys_file}" ]; then
         if [ -f "${state_file}" ]; then
-            awk '
-                { a[$1]=$2 }
-                END { for (k in a) print k, a[k] }
-            ' "${state_file}" "${tmp_keys_file}" > "${state_file}.merged"
+            awk '{ a[$1]=$2 } END { for (k in a) print k, a[k] }' "${state_file}" "${tmp_keys_file}" > "${state_file}.merged"
             mv "${state_file}.merged" "${state_file}"
         else
             mv "${tmp_keys_file}" "${state_file}"
@@ -1031,43 +1128,71 @@ adguardhome_munin_config_upstreams_avg() {
         "graph_title AdGuard Home average upstream response time" \
         "graph_vlabel seconds" \
         "graph_width ${graph_width}"
-    # Print Munin field definitions for all keys in the state file.
-    adguardhome_munin_print_from_state \
-        "${state_file}" \
-        "upstreams_avg" \
-        "" \
-        "" \
-        "${graph_draw}" \
-        "yes" \
-        "AdGuard Home upstreams average response time" \
-        "" \
-        "0" \
-        "GAUGE" \
-        "" \
-        "No upstreams" \
-        "none"
+    if [ -s "${state_file}" ]; then
+        while read -r raw_key _; do
+            key="$(printf "%s" "${raw_key}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
+            case "${key}" in
+                [0-9]*)
+                    key="upstreams_avg_${key}"
+                    ;;
+            esac
+            resolved="$(adguardhome_munin_rev_ptr "${raw_key}")"
+            port="$(printf "%s" "${raw_key}" | awk -F: '{print $2}')"
+            if [ -n "${resolved}" ] && [ "${resolved}" != "${raw_key}" ]; then
+                info="Upstream: ${resolved} (${raw_key})"
+                label="${resolved}:${port}"
+            else
+                info="Upstream: ${raw_key}"
+                label="${raw_key}"
+            fi
+            adguardhome_munin_print \
+                "${key}" \
+                "" \
+                "" \
+                "${graph_draw}" \
+                "yes" \
+                "${info}" \
+                "${label}" \
+                "" \
+                "0" \
+                "GAUGE" \
+                ""
+        done < "${state_file}"
+    else
+        adguardhome_munin_print \
+            "none" \
+            "" \
+            "" \
+            "${graph_draw}" \
+            "yes" \
+            "No upstreams" \
+            "none" \
+            "" \
+            "0" \
+            "GAUGE" \
+            ""
+    fi
 }
 
 adguardhome_munin_fetch_upstreams_avg() {
     # Fetch current values for the "upstreams_avg" plugin.
     # Queries AdGuard Home API for average upstream response times.
-    upstreams_response=$(curl --connect-timeout 5 -k -s -L \
+    upstreams_response=$(curl --connect-timeout 2 --insecure --silent --location \
         -b "${cookie_file}" \
         "${api}${stats_endpoint}")
     tmp_state_file=$(adguardhome_munin_mktemp "${state_dir}" "upstreams_avg_state_tmp")
-    # Extract average response times for each upstream, format to three decimals, filter out missing values.
+    # Write directly to the filtered file, even if empty
     printf "%s\n" "${upstreams_response}" | jq -r ".top_upstreams_avg_time[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
-    awk 'NF == 2' | while read -r upstream avg_time; do
-        # Format average time to three decimal places, strip trailing zeros.
-        upstreams_avg_time=$(printf "%s" "${avg_time}" | awk -F. '{ printf "%d.%s\n", $1, substr($2 "000", 1, 3) }' | sed 's/\.0*$//;s/\(\.[0-9]*[1-9]\)0*$/\1/')
-        printf "%s %s\n" "${upstream}" "${upstreams_avg_time}" >> "${tmp_state_file}.filtered"
-    done
+    awk 'NF == 2 { 
+        avg_time = sprintf("%s", $2)
+        formatted = sprintf("%d.%s", int(avg_time), substr(avg_time ~ /\./ ? substr(avg_time, index(avg_time, ".")+1) "000" : "000", 1, 3))
+        gsub(/\.0*$/, "", formatted)
+        gsub(/(\.[0-9]*[1-9])0*$/, "\\1", formatted)
+        print $1, formatted
+    }' > "${tmp_state_file}.filtered"
     # Merge new values into persistent state file, keeping the latest value for each key.
     if [ -f "${state_file}" ]; then
-        awk '
-            { a[$1]=$2 }
-            END { for (k in a) print k, a[k] }
-        ' "${state_file}" "${tmp_state_file}.filtered" > "${state_file}.merged"
+        awk '{ a[$1]=$2 } END { for (k in a) print k, a[k] }' "${state_file}" "${tmp_state_file}.filtered" > "${state_file}.merged"
         mv "${state_file}.merged" "${state_file}"
     else
         mv "${tmp_state_file}.filtered" "${state_file}"
@@ -1125,7 +1250,9 @@ adguardhome_munin_fetch() {
             ;;
         *)
             # Unknown plugin ID
-            printf "%s\n" "Error: Cannot fetch for unrecognised plugin ID '${adguardhome_munin_plugin_id}'." >&2
+            printf "%s\n" \
+                "Error: Fetch failed." \
+                "Cannot fetch for unrecognised plugin '${adguardhome_munin_plugin_id}'." >&2
             exit 1
             ;;
     esac
@@ -1164,7 +1291,9 @@ adguardhome_munin_config() {
             ;;
         *)
             # Unknown plugin ID
-            printf "%s\n" "Error: Cannot config for unrecognised plugin ID '${adguardhome_munin_plugin_id}'." >&2
+            printf "%s\n" \
+                "Error: Config failed." \
+                "Cannot config for unrecognised plugin '${adguardhome_munin_plugin_id}'." >&2
             exit 1
             ;;
     esac
@@ -1232,23 +1361,28 @@ adguardhome_munin_flush_state() {
     # Flush state files for all plugins that use them.
     # Prints the names of removed state files, or a message if none were found.
     flushed=0
-    # Only attempt to remove state files for plugins that use them.
-    for plugin in blocked clients domains upstreams upstreams_avg; do
-        state_file="${state_dir}/${plugin}.state"
+    # Only attempt to remove state files we know about
+    for state in rev_ptr blocked clients domains upstreams upstreams_avg; do
+        state_file="${state_dir}/adguardhome_munin_${state}.state"
         if [ -f "${state_file}" ]; then
             # Remove the state file and print its name
             rm -f "${state_file}" 2>/dev/null && printf "%s\n" "${state_file}"
-            flushed=1
+            flushed=$((flushed + 1))
         fi
     done
-    # If no state files were found, print a message
-    [ "$flushed" -eq 0 ] && printf "No state files to flush.\n"
+    if [ "$flushed" -eq 0 ]; then
+        printf "No state files to flush.\n"
+    else
+        printf "\nFlushed %d state file%s.\n" "$flushed" "$( [ "$flushed" -eq 1 ] && printf "" || printf "s" )"
+    fi
     exit 0
 }
 
 # Authenticate with AdGuard Home API before running any plugin operation.
 adguardhome_munin_auth || {
-    printf "%s\n" "Error: Authentication failed. Please check your username and password." >&2
+    printf "%s\n" \
+        "Error: Authentication failed." \
+        "Check your AdGuard Home credential, ensure the API is accessible." >&2
     exit 1
 }
 
@@ -1271,7 +1405,7 @@ case "${1}" in
         adguardhome_munin_autoconf
         ;;
     "flush")
-        # "flush": remove all dynamic state files
+        # "flush": remove all state files
         adguardhome_munin_flush_state
         ;;
     *)
@@ -1281,7 +1415,9 @@ esac
 
 # Log out from AdGuard Home API and clean up session cookie.
 adguardhome_munin_logout || {
-    printf "%s\n" "Error: Logout failed." >&2
+    printf "%s\n" \
+        "Error: Logout failed." \
+        "Check your AdGuard Home credentials, ensure the API is accessible." >&2
     exit 1
 }
 
