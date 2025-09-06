@@ -23,6 +23,8 @@
 
 set -e
 
+adguardhome_munin_version="0.1.0"
+
 adguardhome_munin_tempfiles=""
 
 adguardhome_munin_cleanup_tempfiles() {
@@ -56,9 +58,7 @@ if [ "${__FUCK_YOU_SHELLCHECK:-}" = "1" ]; then
 fi
 
 case "${0}" in
-    /*)
-        script_path="${0}"
-    ;;
+    /*) script_path="${0}" ;;
     *)
         script_path="$(cd "$(dirname "${0}")" && pwd)/$(basename "${0}")"
     ;;
@@ -224,7 +224,8 @@ adguardhome_munin_print() {
             printf "%s.min %s\n" "${key}" "${9}"
         fi
     fi
-    # Output type if provided and valid (Munin expects GAUGE, COUNTER, DERIVE, ABSOLUTE)
+    # Output type if provided and valid
+    # Munin expects one of GAUGE, COUNTER, DERIVE, or ABSOLUTE
     if [ -n "${10}" ] && [ -n "$(printf '%s' "${10}" | tr -d '[:space:]')" ]; then
         case "${10}" in
             "GAUGE"|"COUNTER"|"DERIVE"|"ABSOLUTE")
@@ -386,7 +387,11 @@ adguardhome_munin_config_blocked() {
         sort -k2,2nr "${state_file}" | while read -r raw_key raw_value; do
             key="$(printf "%s" "${raw_key}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
             if [ "${graph_type}" = "DERIVE" ]; then
-                addn_info=" (${raw_value} blocks)"
+                if [ "${raw_value}" -eq 1 ]; then
+                    addn_info=" (${raw_value} block)"
+                else
+                    addn_info=" (${raw_value} blocks)"
+                fi
             fi
             info="AdGuard Home blocked domain ${raw_key}${addn_info}"
             label="${raw_key}"
@@ -506,7 +511,11 @@ adguardhome_munin_config_clients() {
             resolved="$(adguardhome_munin_rev_ptr "${raw_key}")"
             port="$(printf "%s" "${raw_key}" | awk -F: '{print $2}')"
             if [ "${graph_type}" = "DERIVE" ]; then
-                addn_info=" (${raw_value} queries)"
+                if [ "${raw_value}" -eq 1 ]; then
+                    addn_info=" (${raw_value} query)"
+                else
+                    addn_info=" (${raw_value} queries)"
+                fi
             fi
             if [ -n "${resolved}" ] && [ "${resolved}" != "${raw_key}" ]; then
                 info="AdGuard Home client ${resolved} ${raw_key}${addn_info}"
@@ -632,7 +641,11 @@ adguardhome_munin_config_domains() {
         sort -k2,2nr "${state_file}" | while read -r raw_key raw_value; do
             key="$(printf "%s" "${raw_key}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
             if [ "${graph_type}" = "DERIVE" ]; then
-                addn_info=" (${raw_value} queries)"
+                if [ "${raw_value}" -eq 1 ]; then
+                    addn_info=" (${raw_value} query)"
+                else
+                    addn_info=" (${raw_value} queries)"
+                fi
             fi
             info="AdGuard Home domain ${raw_key}${addn_info}"
             label="${raw_key}"
@@ -823,6 +836,12 @@ adguardhome_munin_config_queries() {
     num_replaced_safebrowsing="${num_replaced_safebrowsing:-0}"
     num_replaced_parental="${num_replaced_parental:-0}"
     num_replaced_safesearch="${num_replaced_safesearch:-0}"
+    # Singular/plural suffixes
+    dns_queries_suffix=$(awk "BEGIN { print (${num_dns_queries} == 1) ? \"query\" : \"queries\" }")
+    blocked_filtering_suffix=$(awk "BEGIN { print (${num_blocked_filtering} == 1) ? \"block\" : \"blocks\" }")
+    safebrowsing_suffix=$(awk "BEGIN { print (${num_replaced_safebrowsing} == 1) ? \"replacement\" : \"replacements\" }")
+    parental_suffix=$(awk "BEGIN { print (${num_replaced_parental} == 1) ? \"replacement\" : \"replacements\" }")
+    safesearch_suffix=$(awk "BEGIN { print (${num_replaced_safesearch} == 1) ? \"replacement\" : \"replacements\" }")
     printf "%s\n" \
         "graph ${graph}" \
         "graph_args ${graph_args}" \
@@ -833,13 +852,14 @@ adguardhome_munin_config_queries() {
         "graph_title AdGuard Home queries" \
         "graph_vlabel queries / second" \
         "graph_width ${graph_width}"
+    # Print Munin field definitions for each statistic
     adguardhome_munin_print \
         "num_dns_queries" \
         "" \
         "" \
         "${graph_draw}" \
         "yes" \
-        "AdGuard Home DNS queries (${num_dns_queries} queries)" \
+        "AdGuard Home DNS queries (${num_dns_queries} ${dns_queries_suffix})" \
         "queries" \
         "" \
         "0" \
@@ -851,7 +871,7 @@ adguardhome_munin_config_queries() {
         "" \
         "${graph_draw}" \
         "yes" \
-        "AdGuard Home blocked filtering (${num_blocked_filtering} blocks)" \
+        "AdGuard Home blocked filtering (${num_blocked_filtering} ${blocked_filtering_suffix})" \
         "filtering" \
         "" \
         "0" \
@@ -863,7 +883,7 @@ adguardhome_munin_config_queries() {
         "" \
         "${graph_draw}" \
         "yes" \
-        "AdGuard Home replaced safebrowsing (${num_replaced_safebrowsing} replacements)" \
+        "AdGuard Home replaced safebrowsing (${num_replaced_safebrowsing} ${safebrowsing_suffix})" \
         "safebrowsing" \
         "" \
         "0" \
@@ -875,7 +895,7 @@ adguardhome_munin_config_queries() {
         "" \
         "${graph_draw}" \
         "yes" \
-        "AdGuard Home replaced parental (${num_replaced_parental} replacements)" \
+        "AdGuard Home replaced parental (${num_replaced_parental} ${parental_suffix})" \
         "parental" \
         "" \
         "0" \
@@ -887,7 +907,7 @@ adguardhome_munin_config_queries() {
         "" \
         "${graph_draw}" \
         "yes" \
-        "AdGuard Home replaced safesearch (${num_replaced_safesearch} replacements)" \
+        "AdGuard Home replaced safesearch (${num_replaced_safesearch} ${safesearch_suffix})" \
         "safesearch" \
         "" \
         "0" \
@@ -1017,7 +1037,11 @@ adguardhome_munin_config_upstreams() {
             resolved="$(adguardhome_munin_rev_ptr "${raw_key}")"
             port="$(printf "%s" "${raw_key}" | awk -F: '{print $2}')"
             if [ "${graph_type}" = "DERIVE" ]; then
-                addn_info=" (${raw_value} responses)"
+                if [ "${raw_value}" -eq 1 ]; then
+                    addn_info=" (${raw_value} query)"
+                else
+                    addn_info=" (${raw_value} queries)"
+                fi
             fi
             if [ -n "${resolved}" ] && [ "${resolved}" != "${raw_key}" ]; then
                 info="AdGuard Home upstream ${resolved} ${raw_key}${addn_info}"
@@ -1132,7 +1156,11 @@ adguardhome_munin_config_upstreams_avg() {
             resolved="$(adguardhome_munin_rev_ptr "${raw_key}")"
             port="$(printf "%s" "${raw_key}" | awk -F: '{print $2}')"
             if [ "${graph_type}" = "DERIVE" ]; then
-                addn_info=" (${raw_value} seconds)"
+                if [ "$raw_value" = 1 ]; then
+                    addn_info=" (${raw_value} second)"
+                else
+                    addn_info=" (${raw_value} seconds)"
+                fi
             fi
             if [ -n "${resolved}" ] && [ "${resolved}" != "${raw_key}" ]; then
                 info="Average response time for AdGuard Home upstream ${resolved} ${raw_key}${addn_info}"
@@ -1180,11 +1208,8 @@ adguardhome_munin_fetch_upstreams_avg() {
     fi
     upstreams_avg_tmp_state=$(adguardhome_munin_mktemp "${state_dir}" "upstreams_avg_state_tmp")
     # Write directly to the filtered file, even if empty
-    printf "%s\n" "${upstreams_response}" | jq -r ".top_upstreams_avg_time[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
-    awk 'NF == 2 {
-        # Format to 2 decimal places
-        printf "%s %.2f\n", $1, $2 + 0
-    }' > "${upstreams_avg_tmp_state}.filtered"
+    printf "%s\n" "${upstreams_avg_response}" | jq -r ".top_upstreams_avg_time[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
+    awk 'NF == 2 { print $1, $2 }' > "${upstreams_avg_tmp_state}.filtered"
     # Merge new values into persistent state file, keeping the latest value for each key.
     if [ -f "${state_file}" ]; then
         awk '{ a[$1]=$2 } END { for (k in a) print k, a[k] }' "${state_file}" "${upstreams_avg_tmp_state}.filtered" > "${state_file}.merged"
@@ -1351,6 +1376,10 @@ case "${1}" in
     "suggest") adguardhome_munin_suggest ;;
     "autoconf") adguardhome_munin_autoconf ;;
     "flush") adguardhome_munin_flush_state ;;
+    "version")
+        printf "%s\n" "AdGuard Home Munin version ${adguardhome_munin_version}"
+        exit 0
+        ;;
     *)
         # Unknown argument: print usage
         printf "Usage: %s [config|fetch]\n" "${script_path}" >&2
@@ -1364,8 +1393,8 @@ adguardhome_munin_logout || {
     exit 1
 }
 
-# Remove orphaned cookie files older than 60 minutes.
-find "${state_dir}" -maxdepth 1 -name 'cookie_file.*' -mmin +60 -delete
+# Remove orphaned cookie files older than 10 minutes.
+find "${state_dir}" -maxdepth 1 -name 'cookie_file.*' -mmin +10 -delete
 
 #    /\_/\  
 #   ( O.O ) 
