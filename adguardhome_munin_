@@ -25,9 +25,9 @@ set -e
 
 # Version string components
 major_version="0"
-minor_version="2"
+minor_version="3"
 micro_version="0"
-version_tag=""
+version_tag="-dev"
 
 # Set local version
 adguardhome_munin_version="${major_version}.${minor_version}.${micro_version}${version_tag}"
@@ -90,17 +90,6 @@ login_endpoint="${login_endpoint:-"/control/login"}"
 logout_endpoint="${logout_endpoint:-"/control/logout"}"
 stats_endpoint="${stats_endpoint:-"/control/stats"}"
 status_endpoint="${status_endpoint:-"/control/status"}"
-
-# Enforce sensible limits on number of key value pairs to fetch and display
-# (default: 25, min: 1, max: 100)
-
-top_n="${top_n:-"25"}"
-
-if [ "${top_n}" -gt "100" ]; then
-    top_n="100"
-elif [ "${top_n}" -lt "1" ]; then
-    top_n="1"
-fi
 
 agh_username="${username:-}"
 agh_password="${password:-}"
@@ -406,6 +395,24 @@ adguardhome_munin_rev_ptr() {
     fi
 }
 
+# Enforce sensible limits on number of key value pairs to fetch and display
+# (default: 25, min: 1, max: 100)
+
+top_n="${top_n:-"25"}"
+
+if [ "${top_n}" -gt "100" ]; then
+    top_n="100"
+elif [ "${top_n}" -lt "1" ]; then
+    top_n="1"
+fi
+
+blocked_n="${blocked_top_n:-${top_n}}"
+if [ "${blocked_n}" -gt 100 ]; then
+    blocked_n="100";
+elif [ "${blocked_n}" -lt 1 ]; then
+    blocked_n="1";
+fi
+
 adguardhome_munin_config_blocked() {
     # Output Munin graph configuration for the "blocked" plugin.
     # This sets up the graph's appearance and labels.
@@ -415,13 +422,13 @@ adguardhome_munin_config_blocked() {
         "graph_args ${graph_args}" \
         "graph_category ${graph_category}" \
         "graph_height ${graph_height}" \
-        "graph_info This graph shows AdGuard Home's top blocked domains (max ${top_n} shown)" \
+        "graph_info This graph shows AdGuard Home's top blocked domains (max ${blocked_n} shown)" \
         "graph_scale ${graph_scale}" \
         "graph_title AdGuard Home top blocked domains" \
         "${graph_total_line}" \
         "graph_vlabel blocks / second" \
         "graph_width ${graph_width}"
-    printf "%s" "${blocked_response}" | jq -r ".top_blocked_domains[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
+    printf "%s" "${blocked_response}" | jq -r ".top_blocked_domains[:${blocked_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
         awk 'NF == 2' | sort -k2,2nr | while read -r raw_key raw_value; do
             key="$(printf "%s" "${raw_key}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
             if [ "${graph_type}" = "DERIVE" ]; then
@@ -447,7 +454,7 @@ adguardhome_munin_config_blocked() {
                 ""
         done
     # If no blocked domains, output a placeholder field
-    if ! printf "%s" "${blocked_response}" | jq -e ".top_blocked_domains[:${top_n}] | length > 0" >/dev/null; then
+    if ! printf "%s" "${blocked_response}" | jq -e ".top_blocked_domains[:${blocked_n}] | length > 0" >/dev/null; then
         adguardhome_munin_print \
             "none" \
             "" \
@@ -466,7 +473,7 @@ adguardhome_munin_config_blocked() {
 adguardhome_munin_fetch_blocked() {
     # Fetch current values for the "blocked" plugin.
     blocked_response=$(adguardhome_munin_state_handler "${stats_endpoint}")
-    printf "%s" "${blocked_response}" | jq -r ".top_blocked_domains[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
+    printf "%s" "${blocked_response}" | jq -r ".top_blocked_domains[:${blocked_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
         awk 'NF == 2' | sort -k2,2nr | while read -r blocked_domain num_blocked; do
             key="$(printf "%s" "${blocked_domain}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
             case "${key}" in
@@ -475,10 +482,17 @@ adguardhome_munin_fetch_blocked() {
             printf "%s.value %s\n" "${key}" "${num_blocked}"
         done
     # If no blocked domains, output a placeholder value
-    if ! printf "%s" "${blocked_response}" | jq -e ".top_blocked_domains[:${top_n}] | length > 0" >/dev/null; then
+    if ! printf "%s" "${blocked_response}" | jq -e ".top_blocked_domains[:${blocked_n}] | length > 0" >/dev/null; then
         printf "none.value 0\n"
     fi
 }
+
+clients_n="${clients_top_n:-${top_n}}"
+if [ "${clients_n}" -gt 100 ]; then
+    clients_n="100";
+elif [ "${clients_n}" -lt 1 ]; then
+    clients_n="1";
+fi
 
 adguardhome_munin_config_clients() {
     # Output Munin graph configuration for the "clients" plugin.
@@ -489,13 +503,13 @@ adguardhome_munin_config_clients() {
         "graph_args ${graph_args}" \
         "graph_category ${graph_category}" \
         "graph_height ${graph_height}" \
-        "graph_info This graph shows AdGuard Home's top clients (max ${top_n} shown)" \
+        "graph_info This graph shows AdGuard Home's top clients (max ${clients_n} shown)" \
         "graph_scale ${graph_scale}" \
         "graph_title AdGuard Home top clients" \
         "${graph_total_line}" \
         "graph_vlabel queries / second" \
         "graph_width ${graph_width}"
-    printf "%s" "${clients_response}" | jq -r ".top_clients[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
+    printf "%s" "${clients_response}" | jq -r ".top_clients[:${clients_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
         awk 'NF == 2' | sort -k2,2nr | while read -r raw_key raw_value; do
             key="$(printf "%s" "${raw_key}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
             resolved="$(adguardhome_munin_rev_ptr "${raw_key}")"
@@ -532,7 +546,7 @@ adguardhome_munin_config_clients() {
                 ""
         done
     # If no clients, output a placeholder field
-    if ! printf "%s" "${clients_response}" | jq -e ".top_clients[:${top_n}] | length > 0" >/dev/null; then
+    if ! printf "%s" "${clients_response}" | jq -e ".top_clients[:${clients_n}] | length > 0" >/dev/null; then
         adguardhome_munin_print \
             "none" \
             "" \
@@ -551,7 +565,7 @@ adguardhome_munin_config_clients() {
 adguardhome_munin_fetch_clients() {
     # Fetch current values for the "clients" plugin.
     clients_response=$(adguardhome_munin_state_handler "${stats_endpoint}")
-    printf "%s" "${clients_response}" | jq -r ".top_clients[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
+    printf "%s" "${clients_response}" | jq -r ".top_clients[:${clients_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
         awk 'NF == 2' | sort -k2,2nr | while read -r client num_queries; do
             key="$(printf "%s" "${client}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
             case "${key}" in
@@ -560,10 +574,17 @@ adguardhome_munin_fetch_clients() {
             printf "%s.value %s\n" "${key}" "${num_queries}"
         done
     # If no clients, output a placeholder value
-    if ! printf "%s" "${clients_response}" | jq -e ".top_clients[:${top_n}] | length > 0" >/dev/null; then
+    if ! printf "%s" "${clients_response}" | jq -e ".top_clients[:${clients_n}] | length > 0" >/dev/null; then
         printf "none.value 0\n"
     fi
 }
+
+domains_n="${domains_top_n:-${top_n}}"
+if [ "${domains_n}" -gt 100 ]; then
+    domains_n="100";
+elif [ "${domains_n}" -lt 1 ]; then
+    domains_n="1";
+fi
 
 adguardhome_munin_config_domains() {
     # Output Munin graph configuration for the "domains" plugin.
@@ -574,13 +595,13 @@ adguardhome_munin_config_domains() {
         "graph_args ${graph_args}" \
         "graph_category ${graph_category}" \
         "graph_height ${graph_height}" \
-        "graph_info This graph shows AdGuard Home's top domains (max ${top_n} shown)" \
+        "graph_info This graph shows AdGuard Home's top domains (max ${domains_n} shown)" \
         "graph_scale ${graph_scale}" \
         "graph_title AdGuard Home top domains" \
         "${graph_total_line}" \
         "graph_vlabel queries / second" \
         "graph_width ${graph_width}"
-    printf "%s" "${domains_response}" | jq -r ".top_queried_domains[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
+    printf "%s" "${domains_response}" | jq -r ".top_queried_domains[:${domains_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
         awk 'NF == 2' | sort -k2,2nr | while read -r raw_key raw_value; do
             key="$(printf "%s" "${raw_key}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
             if [ "${graph_type}" = "DERIVE" ]; then
@@ -606,7 +627,7 @@ adguardhome_munin_config_domains() {
                 ""
         done
     # If no domains, output a placeholder field
-    if ! printf "%s" "${domains_response}" | jq -e ".top_queried_domains[:${top_n}] | length > 0" >/dev/null; then
+    if ! printf "%s" "${domains_response}" | jq -e ".top_queried_domains[:${domains_n}] | length > 0" >/dev/null; then
         adguardhome_munin_print \
             "none" \
             "" \
@@ -625,7 +646,7 @@ adguardhome_munin_config_domains() {
 adguardhome_munin_fetch_domains() {
     # Fetch current values for the "domains" plugin.
     domains_response=$(adguardhome_munin_state_handler "${stats_endpoint}")
-    printf "%s" "${domains_response}" | jq -r ".top_queried_domains[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
+    printf "%s" "${domains_response}" | jq -r ".top_queried_domains[:${domains_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
         awk 'NF == 2' | sort -k2,2nr | while read -r domain num_queries; do
             key="$(printf "%s" "${domain}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
             case "${key}" in
@@ -634,7 +655,7 @@ adguardhome_munin_fetch_domains() {
             printf "%s.value %s\n" "${key}" "${num_queries}"
         done
     # If no domains, output a placeholder value
-    if ! printf "%s" "${domains_response}" | jq -e ".top_queried_domains[:${top_n}] | length > 0" >/dev/null; then
+    if ! printf "%s" "${domains_response}" | jq -e ".top_queried_domains[:${domains_n}] | length > 0" >/dev/null; then
         printf "none.value 0\n"
     fi
 }
@@ -888,6 +909,13 @@ adguardhome_munin_fetch_status() {
     printf "protection_status.value %s\n" "${status_value}"
 }
 
+upstreams_n="${upstreams_top_n:-${top_n}}"
+if [ "${upstreams_n}" -gt 100 ]; then
+    upstreams_n="100";
+elif [ "${upstreams_n}" -lt 1 ]; then
+    upstreams_n="1";
+fi
+
 adguardhome_munin_config_upstreams() {
     # Output Munin graph configuration for the "upstreams" plugin.
     # This sets up the graph's appearance and labels for top upstreams by query count.
@@ -897,13 +925,13 @@ adguardhome_munin_config_upstreams() {
         "graph_args ${graph_args}" \
         "graph_category ${graph_category}" \
         "graph_height ${graph_height}" \
-        "graph_info This graph shows AdGuard Home's top upstreams (max ${top_n} shown)" \
+        "graph_info This graph shows AdGuard Home's top upstreams (max ${upstreams_n} shown)" \
         "graph_scale ${graph_scale}" \
         "graph_title AdGuard Home top upstreams" \
         "${graph_total_line}" \
         "graph_vlabel queries / second" \
         "graph_width ${graph_width}"
-    printf "%s" "${upstreams_response}" | jq -r ".top_upstreams_responses[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
+    printf "%s" "${upstreams_response}" | jq -r ".top_upstreams_responses[:${upstreams_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
         awk 'NF == 2' | sort -k2,2nr | while read -r raw_key raw_value; do
             key="$(printf "%s" "${raw_key}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
             resolved="$(adguardhome_munin_rev_ptr "${raw_key}")"
@@ -940,7 +968,7 @@ adguardhome_munin_config_upstreams() {
                 ""
         done
     # If no upstreams, output a placeholder field
-    if ! printf "%s" "${upstreams_response}" | jq -e ".top_upstreams_responses[:${top_n}] | length > 0" >/dev/null; then
+    if ! printf "%s" "${upstreams_response}" | jq -e ".top_upstreams_responses[:${upstreams_n}] | length > 0" >/dev/null; then
         adguardhome_munin_print \
             "none" \
             "" \
@@ -959,7 +987,7 @@ adguardhome_munin_config_upstreams() {
 adguardhome_munin_fetch_upstreams() {
     # Fetch current values for the "upstreams" plugin.
     upstreams_response=$(adguardhome_munin_state_handler "${stats_endpoint}")
-    printf "%s" "${upstreams_response}" | jq -r ".top_upstreams_responses[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
+    printf "%s" "${upstreams_response}" | jq -r ".top_upstreams_responses[:${upstreams_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
         awk 'NF == 2' | sort -k2,2nr | while read -r upstream num_responses; do
             key="$(printf "%s" "${upstream}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
             case "${key}" in
@@ -968,10 +996,17 @@ adguardhome_munin_fetch_upstreams() {
             printf "%s.value %s\n" "${key}" "${num_responses}"
         done
     # If no upstreams, output a placeholder value
-    if ! printf "%s" "${upstreams_response}" | jq -e ".top_upstreams_responses[:${top_n}] | length > 0" >/dev/null; then
+    if ! printf "%s" "${upstreams_response}" | jq -e ".top_upstreams_responses[:${upstreams_n}] | length > 0" >/dev/null; then
         printf "none.value 0\n"
     fi
 }
+
+upstreams_avg_n="${upstreams_avg_top_n:-${top_n}}"
+if [ "${upstreams_avg_n}" -gt 100 ]; then
+    upstreams_avg_n="100";
+elif [ "${upstreams_avg_n}" -lt 1 ]; then
+    upstreams_avg_n="1";
+fi
 
 adguardhome_munin_config_upstreams_avg() {
     # Output Munin graph configuration for the "upstreams_avg" plugin.
@@ -982,12 +1017,12 @@ adguardhome_munin_config_upstreams_avg() {
         "graph_args ${graph_args}" \
         "graph_category ${graph_category}" \
         "graph_height ${graph_height}" \
-        "graph_info This graph shows AdGuard Home's top upstreams average response time (max ${top_n} shown)" \
+        "graph_info This graph shows AdGuard Home's top upstreams average response time (max ${upstreams_avg_n} shown)" \
         "graph_scale ${graph_scale}" \
         "graph_title AdGuard Home top upstreams average response time" \
         "graph_vlabel seconds" \
         "graph_width ${graph_width}"
-    printf "%s" "${upstreams_avg_response}" | jq -r ".top_upstreams_avg_time[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
+    printf "%s" "${upstreams_avg_response}" | jq -r ".top_upstreams_avg_time[:${upstreams_avg_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
         awk 'NF == 2' | sort -k2,2nr | while read -r raw_key raw_value; do
             key="$(printf "%s" "${raw_key}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
             resolved="$(adguardhome_munin_rev_ptr "${raw_key}")"
@@ -1024,7 +1059,7 @@ adguardhome_munin_config_upstreams_avg() {
                 ""
         done
     # If no upstreams, output a placeholder field
-    if ! printf "%s" "${upstreams_avg_response}" | jq -e ".top_upstreams_avg_time[:${top_n}] | length > 0" >/dev/null; then
+    if ! printf "%s" "${upstreams_avg_response}" | jq -e ".top_upstreams_avg_time[:${upstreams_avg_n}] | length > 0" >/dev/null; then
         adguardhome_munin_print \
             "none" \
             "" \
@@ -1043,7 +1078,7 @@ adguardhome_munin_config_upstreams_avg() {
 adguardhome_munin_fetch_upstreams_avg() {
     # Fetch current values for the "upstreams_avg" plugin.
     upstreams_avg_response=$(adguardhome_munin_state_handler "${stats_endpoint}")
-    printf "%s" "${upstreams_avg_response}" | jq -r ".top_upstreams_avg_time[:${top_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
+    printf "%s" "${upstreams_avg_response}" | jq -r ".top_upstreams_avg_time[:${upstreams_avg_n}][] | to_entries[] | \"\(.key) \(.value)\"" | \
         awk 'NF == 2' | sort -k2,2nr | while read -r upstream avg_time; do
             key="$(printf "%s" "${upstream}" | sed 's/\\[0-9]\{3\}//g' | tr -d '#' | tr -c 'a-zA-Z0-9' '_')"
             case "${key}" in
@@ -1056,7 +1091,7 @@ adguardhome_munin_fetch_upstreams_avg() {
             fi
         done
     # If no upstreams, output a placeholder value
-    if ! printf "%s" "${upstreams_avg_response}" | jq -e ".top_upstreams_avg_time[:${top_n}] | length > 0" >/dev/null; then
+    if ! printf "%s" "${upstreams_avg_response}" | jq -e ".top_upstreams_avg_time[:${upstreams_avg_n}] | length > 0" >/dev/null; then
         printf "none.value 0\n"
     fi
 }
